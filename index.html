@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>FrontDoor — Verify Wallet</title>
+    <title>Barry OKX Verify</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@okxconnect/universal-provider@1.9.1/dist/okxconnect_universal.min.js"></script>
     <style>
@@ -113,8 +113,8 @@
 </head>
 <body>
     <div class="logo">🔐</div>
-    <h1>FrontDoor Verify</h1>
-    <p class="subtitle">Connect & sign to prove wallet ownership</p>
+    <h1>Barry OKX Verify</h1>
+    <p class="subtitle">Verify your OKX Wallet in two quick steps</p>
 
     <!-- Step 1: Connect -->
     <div id="step1" class="step active">
@@ -133,7 +133,7 @@
             <div id="step2-num" class="step-num">2</div>
             <div class="step-title">Verify Ownership</div>
         </div>
-        <p class="step-desc">Sign a message to prove you own this wallet:</p>
+        <p class="step-desc">Confirm ownership by signing a verification message. This is free and does not send any transaction:</p>
         <div id="wallet-addr" class="addr"></div>
         <button id="btn-sign" onclick="signChallenge()">Sign to Verify</button>
         <div id="err-sign" class="error"></div>
@@ -143,8 +143,8 @@
     <div id="step3" class="step">
         <div class="success">
             <div class="icon">✅</div>
-            <h2>Wallet Verified!</h2>
-            <p>Closing in a moment...</p>
+            <h2>Wallet Connected!</h2>
+            <p>Your wallet has been verified.<br>Returning to the bot...</p>
         </div>
     </div>
 
