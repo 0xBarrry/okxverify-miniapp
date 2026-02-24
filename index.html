@@ -85,6 +85,29 @@
         }
         button:active { opacity: 0.7; }
         button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .network-btns {
+            display: flex;
+            gap: 10px;
+        }
+        .network-btns button {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 6px;
+            padding: 18px 12px;
+            background: rgba(255,255,255,0.06);
+            border: 2px solid transparent;
+            border-radius: 12px;
+            transition: border-color 0.2s, background 0.2s;
+        }
+        .network-btns button:hover { background: rgba(255,255,255,0.1); }
+        .network-btns button .net-icon { font-size: 28px; }
+        .network-btns button .net-label { font-size: 14px; font-weight: 600; }
+        .network-btns button .net-desc {
+            font-size: 11px;
+            color: var(--tg-theme-hint-color, #8a8a9a);
+        }
         .spinner {
             display: inline-block;
             width: 16px; height: 16px;
@@ -116,21 +139,43 @@
     <h1>Barry OKX Verify</h1>
     <p class="subtitle">Verify your OKX Wallet in two quick steps</p>
 
-    <!-- Step 1: Connect -->
+    <!-- Step 1: Choose Network -->
     <div id="step1" class="step active">
         <div class="step-header">
             <div id="step1-num" class="step-num">1</div>
+            <div class="step-title">Select Network</div>
+        </div>
+        <p class="step-desc">Choose which wallet type to connect:</p>
+        <div class="network-btns">
+            <button onclick="selectNetwork('evm')">
+                <span class="net-icon">⟠</span>
+                <span class="net-label">EVM</span>
+                <span class="net-desc">ETH, Base, BNB, etc.</span>
+            </button>
+            <button onclick="selectNetwork('solana')">
+                <span class="net-icon">◎</span>
+                <span class="net-label">Solana</span>
+                <span class="net-desc">SOL wallets</span>
+            </button>
+        </div>
+        <div id="err-network" class="error"></div>
+    </div>
+
+    <!-- Step 2: Connect -->
+    <div id="step2" class="step">
+        <div class="step-header">
+            <div id="step2-num" class="step-num">2</div>
             <div class="step-title">Connect OKX Wallet</div>
         </div>
-        <p class="step-desc">Tap below to connect your OKX Wallet. This will open the OKX app.</p>
+        <p class="step-desc">Tap below to connect your <span id="net-label-connect">EVM</span> wallet. This will open the OKX app.</p>
         <button id="btn-connect" onclick="connectWallet()">Connect OKX Wallet</button>
         <div id="err-connect" class="error"></div>
     </div>
 
-    <!-- Step 2: Sign -->
-    <div id="step2" class="step">
+    <!-- Step 3: Sign -->
+    <div id="step3" class="step">
         <div class="step-header">
-            <div id="step2-num" class="step-num">2</div>
+            <div id="step3-num" class="step-num">3</div>
             <div class="step-title">Verify Ownership</div>
         </div>
         <p class="step-desc">Confirm ownership by signing a verification message. This is free and does not send any transaction:</p>
@@ -139,8 +184,8 @@
         <div id="err-sign" class="error"></div>
     </div>
 
-    <!-- Step 3: Success -->
-    <div id="step3" class="step">
+    <!-- Step 4: Success -->
+    <div id="step4" class="step">
         <div class="success">
             <div class="icon">✅</div>
             <h2>Wallet Connected!</h2>
@@ -156,13 +201,16 @@
 
         let provider = null;
         let connectedAddress = null;
+        let selectedNetwork = null; // 'evm' or 'solana'
+
+        const SOLANA_CHAIN = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
+        const EVM_CHAIN = "eip155:1";
 
         /* --- Read challenge from URL param or sessionStorage fallback --- */
         const params = new URLSearchParams(window.location.search);
         let challengeB64 = params.get('c');
         let challenge = null;
 
-        // Try URL param first, fall back to sessionStorage (survives OKX app redirect)
         if (!challengeB64) {
             challengeB64 = sessionStorage.getItem('okx_challenge_b64');
         }
@@ -171,16 +219,21 @@
             try {
                 challenge = atob(challengeB64);
                 JSON.parse(challenge);
-                // Store for when page reloads after OKX app redirect
                 sessionStorage.setItem('okx_challenge_b64', challengeB64);
             } catch (e) {
                 challenge = null;
             }
         }
 
+        // Restore network selection after OKX app redirect
+        const savedNetwork = sessionStorage.getItem('okx_network');
+        if (savedNetwork) {
+            selectedNetwork = savedNetwork;
+        }
+
         if (!challenge) {
-            showError('err-connect', 'Invalid or missing verification challenge. Please use the button in the bot chat.');
-            document.getElementById('btn-connect').disabled = true;
+            showError('err-network', 'Invalid or missing verification challenge. Please use the button in the bot chat.');
+            document.querySelectorAll('.network-btns button').forEach(b => b.disabled = true);
         }
 
         /* --- Helpers --- */
@@ -188,6 +241,10 @@
             return '0x' + Array.from(new TextEncoder().encode(text))
                 .map(b => b.toString(16).padStart(2, '0'))
                 .join('');
+        }
+
+        function textToBase64(text) {
+            return btoa(text);
         }
 
         function showError(id, msg) {
@@ -208,16 +265,34 @@
                 : text;
         }
 
-        function showStep2(address) {
-            connectedAddress = address;
+        /* --- Step transitions --- */
+        function selectNetwork(net) {
+            selectedNetwork = net;
+            sessionStorage.setItem('okx_network', net);
+
+            // Update UI
             document.getElementById('step1-num').classList.add('done');
             document.getElementById('step1-num').textContent = '\u2713';
-            document.getElementById('btn-connect').style.display = 'none';
-            document.getElementById('wallet-addr').textContent = address;
+            document.querySelectorAll('.network-btns button').forEach(b => b.disabled = true);
+
+            const label = net === 'evm' ? 'EVM (ETH, Base, BNB...)' : 'Solana';
+            document.getElementById('net-label-connect').textContent = label;
             document.getElementById('step2').classList.add('active');
+
+            // Auto-init provider
+            initProvider().catch(e => console.error('Provider init failed:', e));
         }
 
-        /* --- Init provider on page load --- */
+        function showStep3(address) {
+            connectedAddress = address;
+            document.getElementById('step2-num').classList.add('done');
+            document.getElementById('step2-num').textContent = '\u2713';
+            document.getElementById('btn-connect').style.display = 'none';
+            document.getElementById('wallet-addr').textContent = address;
+            document.getElementById('step3').classList.add('active');
+        }
+
+        /* --- Init provider --- */
         const OKXProvider = OKXConnectUniversal.OKXUniversalProvider;
 
         async function initProvider() {
@@ -228,15 +303,24 @@
                 }
             });
 
-            // Check if already connected (restored session from localStorage)
+            // Check if already connected (restored session after OKX app redirect)
             if (provider.connected()) {
                 try {
                     const session = provider.session;
-                    const accounts = session.namespaces.eip155.accounts;
-                    if (accounts && accounts.length > 0) {
-                        const addr = accounts[0].split(':')[2];
-                        showStep2(addr);
-                        return;
+                    if (selectedNetwork === 'solana' && session.namespaces.solana) {
+                        const accounts = session.namespaces.solana.accounts;
+                        if (accounts && accounts.length > 0) {
+                            const addr = accounts[0].split(':')[2];
+                            showStep3(addr);
+                            return;
+                        }
+                    } else if (selectedNetwork === 'evm' && session.namespaces.eip155) {
+                        const accounts = session.namespaces.eip155.accounts;
+                        if (accounts && accounts.length > 0) {
+                            const addr = accounts[0].split(':')[2];
+                            showStep3(addr);
+                            return;
+                        }
                     }
                 } catch (e) {
                     // Session invalid, will need fresh connect
@@ -244,36 +328,46 @@
             }
         }
 
-        // Init immediately
-        initProvider().catch(e => {
-            console.error('Provider init failed:', e);
-        });
+        // If network was restored from session, auto-init
+        if (savedNetwork && challenge) {
+            selectNetwork(savedNetwork);
+        }
 
-        /* --- Step 1: Connect Wallet --- */
+        /* --- Step 2: Connect Wallet --- */
         async function connectWallet() {
             hideError('err-connect');
             setLoading('btn-connect', true, 'Connecting...');
 
             try {
-                // Re-init if needed
                 if (!provider) {
                     await initProvider();
                 }
 
-                const session = await provider.connect({
-                    namespaces: {
-                        eip155: {
-                            chains: ["eip155:1"],
-                            defaultChain: "1"
-                        }
-                    },
-                    sessionConfig: {
-                        redirect: "tg://resolve"
-                    }
-                });
-
-                const accounts = session.namespaces.eip155.accounts;
-                showStep2(accounts[0].split(':')[2]);
+                let session;
+                if (selectedNetwork === 'solana') {
+                    session = await provider.connect({
+                        namespaces: {
+                            solana: {
+                                chains: [SOLANA_CHAIN]
+                            }
+                        },
+                        sessionConfig: { redirect: "tg://resolve" }
+                    });
+                    const accounts = session.namespaces.solana.accounts;
+                    showStep3(accounts[0].split(':')[2]);
+                } else {
+                    session = await provider.connect({
+                        namespaces: {
+                            eip155: {
+                                chains: [EVM_CHAIN],
+                                defaultChain: "1"
+                            }
+                        },
+                        sessionConfig: { redirect: "tg://resolve" }
+                    });
+                    const accounts = session.namespaces.eip155.accounts;
+                    showStep3(accounts[0].split(':')[2]);
+                }
 
             } catch (e) {
                 const msg = e.message || String(e);
@@ -286,15 +380,13 @@
             }
         }
 
-        /* --- Step 2: Sign Challenge --- */
+        /* --- Step 3: Sign Challenge --- */
         async function signChallenge() {
             hideError('err-sign');
             setLoading('btn-sign', true, 'Signing...');
 
             try {
-                // Ensure provider is connected
                 if (!provider || !provider.connected()) {
-                    // Try re-init — SDK may restore from localStorage
                     await initProvider();
                     if (!provider || !provider.connected()) {
                         showError('err-sign', 'Wallet disconnected. Please close and tap the verify button in the bot again.');
@@ -303,26 +395,40 @@
                     }
                 }
 
-                const hexMsg = textToHex(challenge);
-                const signature = await provider.request(
-                    { method: "personal_sign", params: [hexMsg, connectedAddress] },
-                    "eip155:1"
-                );
+                let signature;
+
+                if (selectedNetwork === 'solana') {
+                    // Solana: solana_signMessage with base64-encoded message
+                    const msgBase64 = textToBase64(challenge);
+                    const result = await provider.request(
+                        { method: "solana_signMessage", params: { message: msgBase64 } },
+                        SOLANA_CHAIN
+                    );
+                    // result may be {signature: "base64..."} or a string
+                    signature = typeof result === 'object' ? (result.signature || result) : result;
+                } else {
+                    // EVM: personal_sign
+                    const hexMsg = textToHex(challenge);
+                    signature = await provider.request(
+                        { method: "personal_sign", params: [hexMsg, connectedAddress] },
+                        EVM_CHAIN
+                    );
+                }
 
                 // Send to bot via Telegram sendData
                 tg.sendData(JSON.stringify({
                     address: connectedAddress,
                     challenge: challenge,
-                    signature: signature
+                    signature: signature,
+                    chain: selectedNetwork
                 }));
 
                 // Show success
-                document.getElementById('step2-num').classList.add('done');
-                document.getElementById('step2-num').textContent = '\u2713';
+                document.getElementById('step3-num').classList.add('done');
+                document.getElementById('step3-num').textContent = '\u2713';
                 document.getElementById('btn-sign').style.display = 'none';
-                document.getElementById('step3').classList.add('active');
+                document.getElementById('step4').classList.add('active');
 
-                // Auto-close after 2s
                 setTimeout(() => tg.close(), 2000);
 
             } catch (e) {
