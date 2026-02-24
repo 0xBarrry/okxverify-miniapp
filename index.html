@@ -162,10 +162,15 @@
         .change-link {
             display: inline-block;
             margin-top: 12px;
+            padding: 8px 0;
             font-size: 13px;
             color: var(--tg-theme-link-color, #5bb8f6);
             cursor: pointer;
             text-decoration: underline;
+            background: none;
+            border: none;
+            width: auto;
+            font-weight: 400;
         }
         .spinner {
             display: inline-block;
@@ -227,7 +232,7 @@
                 <span class="net-desc">SOL, SPL tokens</span>
             </button>
         </div>
-        <span class="change-link" id="change-network" style="display:none" onclick="resetNetwork()">Change network</span>
+        <button class="change-link" id="change-network" style="display:none" onclick="resetNetwork()">Change network</button>
         <div id="err-network" class="error"></div>
     </div>
 
@@ -254,7 +259,7 @@
         <div id="err-sign" class="error"></div>
     </div>
 
-    <!-- Step 4: Success -->
+    <!-- Step 4: Success (shown briefly before sendData closes the app) -->
     <div id="step4" class="step">
         <div class="success">
             <div class="icon">✅</div>
@@ -272,9 +277,12 @@
         let provider = null;
         let connectedAddress = null;
         let selectedNetwork = null; // 'evm' or 'solana'
+        let connectTimeout = null;
+        let signTimeout = null;
 
         const SOLANA_CHAIN = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
         const EVM_CHAIN = "eip155:1";
+        const TIMEOUT_MS = 120000; // 2 minutes
 
         /* --- Read challenge from URL param or sessionStorage fallback --- */
         const params = new URLSearchParams(window.location.search);
@@ -302,7 +310,7 @@
         }
 
         if (!challenge) {
-            showError('err-network', 'Invalid or missing verification challenge. Please use the button in the bot chat.');
+            showError('err-network', 'Invalid or missing verification challenge. Please go back to the bot and tap /start first.');
             document.querySelectorAll('.network-btns button').forEach(b => b.disabled = true);
         }
 
@@ -335,9 +343,14 @@
                 : text;
         }
 
+        function scrollToStep(stepId) {
+            setTimeout(() => {
+                document.getElementById(stepId).scrollIntoView({ behavior: 'smooth', block: 'center' });
+            }, 100);
+        }
+
         /* --- Progress bar --- */
         function setProgress(step) {
-            // step: 1 = network, 2 = connect, 3 = sign done
             const dot1 = document.getElementById('dot1');
             const dot2 = document.getElementById('dot2');
             const dot3 = document.getElementById('dot3');
@@ -369,13 +382,13 @@
             document.getElementById('change-network').style.display = 'inline-block';
 
             // Update step 2 labels
-            const label = net === 'evm' ? 'EVM' : 'Solana';
-            document.getElementById('net-label-connect').textContent = label;
-            document.getElementById('btn-connect').textContent = 'Connect OKX ' + label + ' Wallet';
+            document.getElementById('net-label-connect').textContent = netName;
+            document.getElementById('btn-connect').textContent = 'Connect OKX ' + netName + ' Wallet';
             document.getElementById('step2').classList.add('active');
 
-            // Progress
+            // Progress + scroll
             setProgress(2);
+            scrollToStep('step2');
 
             // Auto-init provider
             initProvider().catch(e => console.error('Provider init failed:', e));
@@ -410,11 +423,11 @@
             provider = null;
 
             setProgress(1);
+            scrollToStep('step1');
         }
 
         function completeStep(stepNum) {
-            const stepEl = document.getElementById('step' + stepNum);
-            stepEl.classList.add('completed');
+            document.getElementById('step' + stepNum).classList.add('completed');
         }
 
         function showStep3(address) {
@@ -422,6 +435,7 @@
             document.getElementById('step2-num').classList.add('done');
             document.getElementById('step2-num').textContent = '\u2713';
             document.getElementById('btn-connect').style.display = 'none';
+            if (connectTimeout) { clearTimeout(connectTimeout); connectTimeout = null; }
 
             // Grey out completed steps
             completeStep(1);
@@ -430,6 +444,7 @@
             document.getElementById('wallet-addr').textContent = address;
             document.getElementById('step3').classList.add('active');
             setProgress(3);
+            scrollToStep('step3');
         }
 
         /* --- Init provider --- */
@@ -479,6 +494,12 @@
             const netLabel = selectedNetwork === 'solana' ? 'Solana' : 'EVM';
             setLoading('btn-connect', true, 'Connecting...');
 
+            // Timeout fallback
+            connectTimeout = setTimeout(() => {
+                showError('err-connect', 'Taking too long? Close this and tap /start in the bot to retry.');
+                setLoading('btn-connect', false, 'Connect OKX ' + netLabel + ' Wallet');
+            }, TIMEOUT_MS);
+
             try {
                 if (!provider) {
                     await initProvider();
@@ -511,6 +532,7 @@
                 }
 
             } catch (e) {
+                if (connectTimeout) { clearTimeout(connectTimeout); connectTimeout = null; }
                 const msg = e.message || String(e);
                 if (msg.includes('reject') || msg.includes('cancel')) {
                     showError('err-connect', 'Connection cancelled. Tap to try again.');
@@ -526,10 +548,17 @@
             hideError('err-sign');
             setLoading('btn-sign', true, 'Signing...');
 
+            // Timeout fallback
+            signTimeout = setTimeout(() => {
+                showError('err-sign', 'Taking too long? Close this and tap /start in the bot to retry.');
+                setLoading('btn-sign', false, 'Sign to Verify');
+            }, TIMEOUT_MS);
+
             try {
                 if (!provider || !provider.connected()) {
                     await initProvider();
                     if (!provider || !provider.connected()) {
+                        if (signTimeout) { clearTimeout(signTimeout); signTimeout = null; }
                         showError('err-sign', 'Wallet disconnected. Please close and tap the verify button in the bot again.');
                         setLoading('btn-sign', false, 'Sign to Verify');
                         return;
@@ -539,16 +568,13 @@
                 let signature;
 
                 if (selectedNetwork === 'solana') {
-                    // Solana: solana_signMessage with base64-encoded message
                     const msgBase64 = textToBase64(challenge);
                     const result = await provider.request(
                         { method: "solana_signMessage", params: { message: msgBase64 } },
                         SOLANA_CHAIN
                     );
-                    // result may be {signature: "base64..."} or a string
                     signature = typeof result === 'object' ? (result.signature || result) : result;
                 } else {
-                    // EVM: personal_sign
                     const hexMsg = textToHex(challenge);
                     signature = await provider.request(
                         { method: "personal_sign", params: [hexMsg, connectedAddress] },
@@ -556,7 +582,17 @@
                     );
                 }
 
-                // Send to bot via Telegram sendData
+                if (signTimeout) { clearTimeout(signTimeout); signTimeout = null; }
+
+                // Show success UI before sendData (sendData closes the WebApp)
+                document.getElementById('step3-num').classList.add('done');
+                document.getElementById('step3-num').textContent = '\u2713';
+                document.getElementById('btn-sign').style.display = 'none';
+                completeStep(3);
+                document.getElementById('step4').classList.add('active');
+                setProgress(4);
+
+                // Send to bot — this closes the WebApp
                 tg.sendData(JSON.stringify({
                     address: connectedAddress,
                     challenge: challenge,
@@ -564,17 +600,11 @@
                     chain: selectedNetwork
                 }));
 
-                // Show success
-                document.getElementById('step3-num').classList.add('done');
-                document.getElementById('step3-num').textContent = '\u2713';
-                document.getElementById('btn-sign').style.display = 'none';
-                completeStep(3);
-                document.getElementById('step4').classList.add('active');
-                setProgress(4); // all done
-
-                setTimeout(() => tg.close(), 2000);
+                // Safety fallback if sendData doesn't close
+                setTimeout(() => tg.close(), 3000);
 
             } catch (e) {
+                if (signTimeout) { clearTimeout(signTimeout); signTimeout = null; }
                 const msg = e.message || String(e);
                 if (msg.includes('reject') || msg.includes('cancel')) {
                     showError('err-sign', 'Signing cancelled. Tap to try again.');
