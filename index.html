@@ -1,0 +1,292 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>FrontDoor — Verify Wallet</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@okxconnect/universal-provider@1.9.1/dist/okxconnect_universal.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: var(--tg-theme-bg-color, #1a1a2e);
+            color: var(--tg-theme-text-color, #ffffff);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            padding: 24px 16px;
+        }
+        .logo { font-size: 48px; margin-bottom: 8px; }
+        h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+        .subtitle {
+            font-size: 14px;
+            color: var(--tg-theme-hint-color, #8a8a9a);
+            margin-bottom: 32px;
+            text-align: center;
+        }
+        .step {
+            width: 100%;
+            max-width: 360px;
+            background: var(--tg-theme-secondary-bg-color, #16213e);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 12px;
+            display: none;
+        }
+        .step.active { display: block; }
+        .step-header {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+        .step-num {
+            width: 28px; height: 28px;
+            border-radius: 50%;
+            background: var(--tg-theme-button-color, #0088cc);
+            color: var(--tg-theme-button-text-color, #fff);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            font-weight: 600;
+            flex-shrink: 0;
+        }
+        .step-num.done { background: #27ae60; }
+        .step-title { font-size: 16px; font-weight: 500; }
+        .step-desc {
+            font-size: 13px;
+            color: var(--tg-theme-hint-color, #8a8a9a);
+            margin-bottom: 16px;
+            line-height: 1.4;
+        }
+        .addr {
+            font-family: 'SF Mono', 'Courier New', monospace;
+            font-size: 13px;
+            background: rgba(255,255,255,0.08);
+            padding: 8px 12px;
+            border-radius: 8px;
+            word-break: break-all;
+            margin-bottom: 12px;
+        }
+        button {
+            width: 100%;
+            padding: 14px;
+            border: none;
+            border-radius: 10px;
+            font-size: 15px;
+            font-weight: 600;
+            cursor: pointer;
+            background: var(--tg-theme-button-color, #0088cc);
+            color: var(--tg-theme-button-text-color, #ffffff);
+            transition: opacity 0.2s;
+        }
+        button:active { opacity: 0.7; }
+        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        .spinner {
+            display: inline-block;
+            width: 16px; height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            vertical-align: middle;
+            margin-right: 8px;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .error {
+            background: rgba(231,76,60,0.15);
+            color: #e74c3c;
+            padding: 12px;
+            border-radius: 8px;
+            font-size: 13px;
+            margin-top: 12px;
+            display: none;
+        }
+        .success { text-align: center; padding: 40px 20px; }
+        .success .icon { font-size: 64px; margin-bottom: 16px; }
+        .success h2 { font-size: 20px; margin-bottom: 8px; color: #27ae60; }
+        .success p { font-size: 14px; color: var(--tg-theme-hint-color, #8a8a9a); }
+    </style>
+</head>
+<body>
+    <div class="logo">🔐</div>
+    <h1>FrontDoor Verify</h1>
+    <p class="subtitle">Connect & sign to prove wallet ownership</p>
+
+    <!-- Step 1: Connect -->
+    <div id="step1" class="step active">
+        <div class="step-header">
+            <div id="step1-num" class="step-num">1</div>
+            <div class="step-title">Connect OKX Wallet</div>
+        </div>
+        <p class="step-desc">Tap below to connect your OKX Wallet. This will open the OKX app.</p>
+        <button id="btn-connect" onclick="connectWallet()">Connect OKX Wallet</button>
+        <div id="err-connect" class="error"></div>
+    </div>
+
+    <!-- Step 2: Sign -->
+    <div id="step2" class="step">
+        <div class="step-header">
+            <div id="step2-num" class="step-num">2</div>
+            <div class="step-title">Verify Ownership</div>
+        </div>
+        <p class="step-desc">Sign a message to prove you own this wallet:</p>
+        <div id="wallet-addr" class="addr"></div>
+        <button id="btn-sign" onclick="signChallenge()">Sign to Verify</button>
+        <div id="err-sign" class="error"></div>
+    </div>
+
+    <!-- Step 3: Success -->
+    <div id="step3" class="step">
+        <div class="success">
+            <div class="icon">✅</div>
+            <h2>Wallet Verified!</h2>
+            <p>Closing in a moment...</p>
+        </div>
+    </div>
+
+    <script>
+        /* --- Globals --- */
+        const tg = window.Telegram.WebApp;
+        tg.ready();
+        tg.expand();
+
+        let provider = null;
+        let connectedAddress = null;
+
+        /* --- Read challenge from URL param (base64-encoded JSON) --- */
+        const params = new URLSearchParams(window.location.search);
+        const challengeB64 = params.get('c');
+        let challenge = null;
+
+        if (challengeB64) {
+            try {
+                challenge = atob(challengeB64);
+                JSON.parse(challenge); // validate JSON
+            } catch (e) {
+                challenge = null;
+            }
+        }
+
+        if (!challenge) {
+            showError('err-connect', 'Invalid or missing verification challenge. Please use the button in the bot chat.');
+            document.getElementById('btn-connect').disabled = true;
+        }
+
+        /* --- Helpers --- */
+        function textToHex(text) {
+            return '0x' + Array.from(new TextEncoder().encode(text))
+                .map(b => b.toString(16).padStart(2, '0'))
+                .join('');
+        }
+
+        function showError(id, msg) {
+            const el = document.getElementById(id);
+            el.textContent = msg;
+            el.style.display = 'block';
+        }
+
+        function hideError(id) {
+            document.getElementById(id).style.display = 'none';
+        }
+
+        function setLoading(btnId, loading, text) {
+            const btn = document.getElementById(btnId);
+            btn.disabled = loading;
+            btn.innerHTML = loading
+                ? '<span class="spinner"></span>' + text
+                : text;
+        }
+
+        /* --- Step 1: Connect Wallet --- */
+        async function connectWallet() {
+            hideError('err-connect');
+            setLoading('btn-connect', true, 'Connecting...');
+
+            try {
+                const OKXProvider = OKXConnectUniversal.OKXUniversalProvider;
+                provider = await OKXProvider.init({
+                    DAppMetaData: {
+                        name: "FrontDoor Verify",
+                        icon: "https://raw.githubusercontent.com/0xBarrry/frontdoor-miniapp/main/icon.png"
+                    }
+                });
+
+                const session = await provider.connect({
+                    namespaces: {
+                        eip155: {
+                            chains: ["eip155:1"],
+                            defaultChain: "1"
+                        }
+                    },
+                    sessionConfig: {
+                        redirect: "tg://resolve"
+                    }
+                });
+
+                // Extract address — format: "eip155:1:0xABCD..."
+                const accounts = session.namespaces.eip155.accounts;
+                connectedAddress = accounts[0].split(':')[2];
+
+                // Update UI → show step 2
+                document.getElementById('step1-num').classList.add('done');
+                document.getElementById('step1-num').textContent = '✓';
+                document.getElementById('btn-connect').style.display = 'none';
+                document.getElementById('wallet-addr').textContent = connectedAddress;
+                document.getElementById('step2').classList.add('active');
+
+            } catch (e) {
+                const msg = e.message || String(e);
+                if (msg.includes('reject') || msg.includes('cancel')) {
+                    showError('err-connect', 'Connection cancelled. Tap to try again.');
+                } else {
+                    showError('err-connect', 'Connection failed: ' + msg);
+                }
+                setLoading('btn-connect', false, 'Connect OKX Wallet');
+            }
+        }
+
+        /* --- Step 2: Sign Challenge --- */
+        async function signChallenge() {
+            hideError('err-sign');
+            setLoading('btn-sign', true, 'Signing...');
+
+            try {
+                const hexMsg = textToHex(challenge);
+                const signature = await provider.request(
+                    { method: "personal_sign", params: [hexMsg, connectedAddress] },
+                    "eip155:1"
+                );
+
+                // Send to bot via Telegram sendData
+                tg.sendData(JSON.stringify({
+                    address: connectedAddress,
+                    challenge: challenge,
+                    signature: signature
+                }));
+
+                // Show success
+                document.getElementById('step2-num').classList.add('done');
+                document.getElementById('step2-num').textContent = '✓';
+                document.getElementById('btn-sign').style.display = 'none';
+                document.getElementById('step3').classList.add('active');
+
+                // Auto-close after 2s
+                setTimeout(() => tg.close(), 2000);
+
+            } catch (e) {
+                const msg = e.message || String(e);
+                if (msg.includes('reject') || msg.includes('cancel')) {
+                    showError('err-sign', 'Signing cancelled. Tap to try again.');
+                } else {
+                    showError('err-sign', 'Signing failed: ' + msg);
+                }
+                setLoading('btn-sign', false, 'Sign to Verify');
+            }
+        }
+    </script>
+</body>
+</html>
