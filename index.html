@@ -157,15 +157,22 @@
         let provider = null;
         let connectedAddress = null;
 
-        /* --- Read challenge from URL param (base64-encoded JSON) --- */
+        /* --- Read challenge from URL param or sessionStorage fallback --- */
         const params = new URLSearchParams(window.location.search);
-        const challengeB64 = params.get('c');
+        let challengeB64 = params.get('c');
         let challenge = null;
+
+        // Try URL param first, fall back to sessionStorage (survives OKX app redirect)
+        if (!challengeB64) {
+            challengeB64 = sessionStorage.getItem('okx_challenge_b64');
+        }
 
         if (challengeB64) {
             try {
                 challenge = atob(challengeB64);
                 JSON.parse(challenge);
+                // Store for when page reloads after OKX app redirect
+                sessionStorage.setItem('okx_challenge_b64', challengeB64);
             } catch (e) {
                 challenge = null;
             }
