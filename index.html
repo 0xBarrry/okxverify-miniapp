@@ -165,7 +165,7 @@
         if (challengeB64) {
             try {
                 challenge = atob(challengeB64);
-                JSON.parse(challenge); // validate JSON
+                JSON.parse(challenge);
             } catch (e) {
                 challenge = null;
             }
@@ -201,19 +201,57 @@
                 : text;
         }
 
+        function showStep2(address) {
+            connectedAddress = address;
+            document.getElementById('step1-num').classList.add('done');
+            document.getElementById('step1-num').textContent = '\u2713';
+            document.getElementById('btn-connect').style.display = 'none';
+            document.getElementById('wallet-addr').textContent = address;
+            document.getElementById('step2').classList.add('active');
+        }
+
+        /* --- Init provider on page load --- */
+        const OKXProvider = OKXConnectUniversal.OKXUniversalProvider;
+
+        async function initProvider() {
+            provider = await OKXProvider.init({
+                dappMetaData: {
+                    name: "Barry OKX Verify",
+                    icon: "https://raw.githubusercontent.com/0xBarrry/frontdoor-miniapp/main/icon.png"
+                }
+            });
+
+            // Check if already connected (restored session from localStorage)
+            if (provider.connected()) {
+                try {
+                    const session = provider.session;
+                    const accounts = session.namespaces.eip155.accounts;
+                    if (accounts && accounts.length > 0) {
+                        const addr = accounts[0].split(':')[2];
+                        showStep2(addr);
+                        return;
+                    }
+                } catch (e) {
+                    // Session invalid, will need fresh connect
+                }
+            }
+        }
+
+        // Init immediately
+        initProvider().catch(e => {
+            console.error('Provider init failed:', e);
+        });
+
         /* --- Step 1: Connect Wallet --- */
         async function connectWallet() {
             hideError('err-connect');
             setLoading('btn-connect', true, 'Connecting...');
 
             try {
-                const OKXProvider = OKXConnectUniversal.OKXUniversalProvider;
-                provider = await OKXProvider.init({
-                    dappMetaData: {
-                        name: "Barry OKX Verify",
-                        icon: "https://raw.githubusercontent.com/0xBarrry/frontdoor-miniapp/main/icon.png"
-                    }
-                });
+                // Re-init if needed
+                if (!provider) {
+                    await initProvider();
+                }
 
                 const session = await provider.connect({
                     namespaces: {
@@ -227,16 +265,8 @@
                     }
                 });
 
-                // Extract address — format: "eip155:1:0xABCD..."
                 const accounts = session.namespaces.eip155.accounts;
-                connectedAddress = accounts[0].split(':')[2];
-
-                // Update UI → show step 2
-                document.getElementById('step1-num').classList.add('done');
-                document.getElementById('step1-num').textContent = '✓';
-                document.getElementById('btn-connect').style.display = 'none';
-                document.getElementById('wallet-addr').textContent = connectedAddress;
-                document.getElementById('step2').classList.add('active');
+                showStep2(accounts[0].split(':')[2]);
 
             } catch (e) {
                 const msg = e.message || String(e);
@@ -255,6 +285,17 @@
             setLoading('btn-sign', true, 'Signing...');
 
             try {
+                // Ensure provider is connected
+                if (!provider || !provider.connected()) {
+                    // Try re-init — SDK may restore from localStorage
+                    await initProvider();
+                    if (!provider || !provider.connected()) {
+                        showError('err-sign', 'Wallet disconnected. Please close and tap the verify button in the bot again.');
+                        setLoading('btn-sign', false, 'Sign to Verify');
+                        return;
+                    }
+                }
+
                 const hexMsg = textToHex(challenge);
                 const signature = await provider.request(
                     { method: "personal_sign", params: [hexMsg, connectedAddress] },
@@ -270,7 +311,7 @@
 
                 // Show success
                 document.getElementById('step2-num').classList.add('done');
-                document.getElementById('step2-num').textContent = '✓';
+                document.getElementById('step2-num').textContent = '\u2713';
                 document.getElementById('btn-sign').style.display = 'none';
                 document.getElementById('step3').classList.add('active');
 
@@ -281,6 +322,8 @@
                 const msg = e.message || String(e);
                 if (msg.includes('reject') || msg.includes('cancel')) {
                     showError('err-sign', 'Signing cancelled. Tap to try again.');
+                } else if (msg.includes('not connected') || msg.includes('disconnected')) {
+                    showError('err-sign', 'Wallet disconnected. Please close and tap the verify button in the bot again.');
                 } else {
                     showError('err-sign', 'Signing failed: ' + msg);
                 }
