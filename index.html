@@ -23,9 +23,42 @@
         .subtitle {
             font-size: 14px;
             color: var(--tg-theme-hint-color, #8a8a9a);
-            margin-bottom: 32px;
+            margin-bottom: 20px;
             text-align: center;
         }
+
+        /* --- Progress bar --- */
+        .progress {
+            display: flex;
+            align-items: center;
+            gap: 0;
+            margin-bottom: 28px;
+            width: 160px;
+        }
+        .progress-dot {
+            width: 12px; height: 12px;
+            border-radius: 50%;
+            background: rgba(255,255,255,0.15);
+            flex-shrink: 0;
+            transition: background 0.3s;
+        }
+        .progress-dot.active {
+            background: var(--tg-theme-button-color, #0088cc);
+        }
+        .progress-dot.done {
+            background: #27ae60;
+        }
+        .progress-line {
+            flex: 1;
+            height: 2px;
+            background: rgba(255,255,255,0.15);
+            transition: background 0.3s;
+        }
+        .progress-line.done {
+            background: #27ae60;
+        }
+
+        /* --- Steps --- */
         .step {
             width: 100%;
             max-width: 360px;
@@ -34,14 +67,23 @@
             padding: 20px;
             margin-bottom: 12px;
             display: none;
+            transition: opacity 0.3s;
         }
         .step.active { display: block; }
+        .step.completed {
+            opacity: 0.45;
+            padding: 14px 20px;
+        }
         .step-header {
             display: flex;
             align-items: center;
             gap: 10px;
             margin-bottom: 12px;
         }
+        .step.completed .step-header { margin-bottom: 0; }
+        .step.completed .step-desc,
+        .step.completed .network-btns,
+        .step.completed .change-link { display: none; }
         .step-num {
             width: 28px; height: 28px;
             border-radius: 50%;
@@ -56,6 +98,11 @@
         }
         .step-num.done { background: #27ae60; }
         .step-title { font-size: 16px; font-weight: 500; }
+        .step-detail {
+            font-size: 13px;
+            color: var(--tg-theme-hint-color, #8a8a9a);
+            margin-left: auto;
+        }
         .step-desc {
             font-size: 13px;
             color: var(--tg-theme-hint-color, #8a8a9a);
@@ -102,11 +149,23 @@
             transition: border-color 0.2s, background 0.2s;
         }
         .network-btns button:hover { background: rgba(255,255,255,0.1); }
+        .network-btns button.selected {
+            border-color: var(--tg-theme-button-color, #0088cc);
+            background: rgba(255,255,255,0.1);
+        }
         .network-btns button .net-icon { font-size: 28px; }
         .network-btns button .net-label { font-size: 14px; font-weight: 600; }
         .network-btns button .net-desc {
             font-size: 11px;
             color: var(--tg-theme-hint-color, #8a8a9a);
+        }
+        .change-link {
+            display: inline-block;
+            margin-top: 12px;
+            font-size: 13px;
+            color: var(--tg-theme-link-color, #5bb8f6);
+            cursor: pointer;
+            text-decoration: underline;
         }
         .spinner {
             display: inline-block;
@@ -137,27 +196,38 @@
 <body>
     <div class="logo">🔐</div>
     <h1>Barry OKX Verify</h1>
-    <p class="subtitle">Verify your OKX Wallet in two quick steps</p>
+    <p class="subtitle">Verify your OKX Wallet in three quick steps</p>
+
+    <!-- Progress bar -->
+    <div class="progress">
+        <div class="progress-dot active" id="dot1"></div>
+        <div class="progress-line" id="line1"></div>
+        <div class="progress-dot" id="dot2"></div>
+        <div class="progress-line" id="line2"></div>
+        <div class="progress-dot" id="dot3"></div>
+    </div>
 
     <!-- Step 1: Choose Network -->
     <div id="step1" class="step active">
         <div class="step-header">
             <div id="step1-num" class="step-num">1</div>
             <div class="step-title">Select Network</div>
+            <div id="step1-detail" class="step-detail"></div>
         </div>
         <p class="step-desc">Choose which wallet type to connect:</p>
         <div class="network-btns">
-            <button onclick="selectNetwork('evm')">
+            <button id="btn-evm" onclick="selectNetwork('evm')">
                 <span class="net-icon">⟠</span>
                 <span class="net-label">EVM</span>
                 <span class="net-desc">ETH, Base, BNB, etc.</span>
             </button>
-            <button onclick="selectNetwork('solana')">
+            <button id="btn-solana" onclick="selectNetwork('solana')">
                 <span class="net-icon">◎</span>
                 <span class="net-label">Solana</span>
-                <span class="net-desc">SOL wallets</span>
+                <span class="net-desc">SOL, SPL tokens</span>
             </button>
         </div>
+        <span class="change-link" id="change-network" style="display:none" onclick="resetNetwork()">Change network</span>
         <div id="err-network" class="error"></div>
     </div>
 
@@ -178,7 +248,7 @@
             <div id="step3-num" class="step-num">3</div>
             <div class="step-title">Verify Ownership</div>
         </div>
-        <p class="step-desc">Confirm ownership by signing a verification message. This is free and does not send any transaction:</p>
+        <p class="step-desc">Confirm ownership by signing a verification message. This is free and does not send any transaction.</p>
         <div id="wallet-addr" class="addr"></div>
         <button id="btn-sign" onclick="signChallenge()">Sign to Verify</button>
         <div id="err-sign" class="error"></div>
@@ -188,8 +258,8 @@
     <div id="step4" class="step">
         <div class="success">
             <div class="icon">✅</div>
-            <h2>Wallet Connected!</h2>
-            <p>Your wallet has been verified.<br>Returning to the bot...</p>
+            <h2>Wallet Submitted</h2>
+            <p>Verifying with OKX...<br>Returning to the bot.</p>
         </div>
     </div>
 
@@ -265,22 +335,86 @@
                 : text;
         }
 
+        /* --- Progress bar --- */
+        function setProgress(step) {
+            // step: 1 = network, 2 = connect, 3 = sign done
+            const dot1 = document.getElementById('dot1');
+            const dot2 = document.getElementById('dot2');
+            const dot3 = document.getElementById('dot3');
+            const line1 = document.getElementById('line1');
+            const line2 = document.getElementById('line2');
+
+            dot1.className = 'progress-dot ' + (step >= 1 ? (step > 1 ? 'done' : 'active') : '');
+            line1.className = 'progress-line ' + (step > 1 ? 'done' : '');
+            dot2.className = 'progress-dot ' + (step >= 2 ? (step > 2 ? 'done' : 'active') : '');
+            line2.className = 'progress-line ' + (step > 2 ? 'done' : '');
+            dot3.className = 'progress-dot ' + (step >= 3 ? (step > 3 ? 'done' : 'active') : '');
+        }
+
         /* --- Step transitions --- */
         function selectNetwork(net) {
             selectedNetwork = net;
             sessionStorage.setItem('okx_network', net);
 
-            // Update UI
+            // Highlight selected button
+            document.getElementById('btn-evm').classList.toggle('selected', net === 'evm');
+            document.getElementById('btn-solana').classList.toggle('selected', net === 'solana');
+
+            // Mark step 1 done
             document.getElementById('step1-num').classList.add('done');
             document.getElementById('step1-num').textContent = '\u2713';
             document.querySelectorAll('.network-btns button').forEach(b => b.disabled = true);
+            const netName = net === 'evm' ? 'EVM' : 'Solana';
+            document.getElementById('step1-detail').textContent = netName;
+            document.getElementById('change-network').style.display = 'inline-block';
 
-            const label = net === 'evm' ? 'EVM (ETH, Base, BNB...)' : 'Solana';
+            // Update step 2 labels
+            const label = net === 'evm' ? 'EVM' : 'Solana';
             document.getElementById('net-label-connect').textContent = label;
+            document.getElementById('btn-connect').textContent = 'Connect OKX ' + label + ' Wallet';
             document.getElementById('step2').classList.add('active');
+
+            // Progress
+            setProgress(2);
 
             // Auto-init provider
             initProvider().catch(e => console.error('Provider init failed:', e));
+        }
+
+        function resetNetwork() {
+            // Only allow reset if not yet connected
+            if (connectedAddress) return;
+
+            selectedNetwork = null;
+            sessionStorage.removeItem('okx_network');
+
+            // Reset step 1 UI
+            document.getElementById('step1-num').classList.remove('done');
+            document.getElementById('step1-num').textContent = '1';
+            document.getElementById('step1-detail').textContent = '';
+            document.getElementById('change-network').style.display = 'none';
+            document.getElementById('btn-evm').classList.remove('selected');
+            document.getElementById('btn-solana').classList.remove('selected');
+            document.querySelectorAll('.network-btns button').forEach(b => b.disabled = false);
+            document.getElementById('step1').classList.remove('completed');
+
+            // Hide step 2
+            document.getElementById('step2').classList.remove('active');
+            hideError('err-connect');
+            setLoading('btn-connect', false, 'Connect OKX Wallet');
+
+            // Disconnect provider if needed
+            if (provider && provider.connected()) {
+                try { provider.disconnect(); } catch(e) {}
+            }
+            provider = null;
+
+            setProgress(1);
+        }
+
+        function completeStep(stepNum) {
+            const stepEl = document.getElementById('step' + stepNum);
+            stepEl.classList.add('completed');
         }
 
         function showStep3(address) {
@@ -288,8 +422,14 @@
             document.getElementById('step2-num').classList.add('done');
             document.getElementById('step2-num').textContent = '\u2713';
             document.getElementById('btn-connect').style.display = 'none';
+
+            // Grey out completed steps
+            completeStep(1);
+            completeStep(2);
+
             document.getElementById('wallet-addr').textContent = address;
             document.getElementById('step3').classList.add('active');
+            setProgress(3);
         }
 
         /* --- Init provider --- */
@@ -336,6 +476,7 @@
         /* --- Step 2: Connect Wallet --- */
         async function connectWallet() {
             hideError('err-connect');
+            const netLabel = selectedNetwork === 'solana' ? 'Solana' : 'EVM';
             setLoading('btn-connect', true, 'Connecting...');
 
             try {
@@ -376,7 +517,7 @@
                 } else {
                     showError('err-connect', 'Connection failed: ' + msg);
                 }
-                setLoading('btn-connect', false, 'Connect OKX Wallet');
+                setLoading('btn-connect', false, 'Connect OKX ' + netLabel + ' Wallet');
             }
         }
 
@@ -427,7 +568,9 @@
                 document.getElementById('step3-num').classList.add('done');
                 document.getElementById('step3-num').textContent = '\u2713';
                 document.getElementById('btn-sign').style.display = 'none';
+                completeStep(3);
                 document.getElementById('step4').classList.add('active');
+                setProgress(4); // all done
 
                 setTimeout(() => tg.close(), 2000);
 
