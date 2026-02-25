@@ -427,6 +427,47 @@
         }
 
         /* --- Helpers --- */
+        /* --- Extract Solana signature from various SDK response formats --- */
+        function extractSolSignature(result) {
+            // Direct string (base64 or base58)
+            if (typeof result === 'string') return result;
+            // Uint8Array → base64
+            if (result instanceof Uint8Array) return btoa(String.fromCharCode(...result));
+            if (typeof result !== 'object' || result === null) return String(result);
+
+            // Check common response keys: {signature: ...}, {result: ...}, {sig: ...}
+            for (const key of ['signature', 'result', 'sig', 'data']) {
+                const val = result[key];
+                if (typeof val === 'string' && val.length > 20) return val;
+                if (val instanceof Uint8Array) return btoa(String.fromCharCode(...val));
+                // Uint8Array serialized as plain object {0: byte, 1: byte, ...}
+                if (typeof val === 'object' && val !== null && '0' in val) {
+                    const bytes = bytesFromObj(val);
+                    if (bytes) return btoa(String.fromCharCode(...bytes));
+                }
+            }
+
+            // Maybe result itself is a Uint8Array-like plain object
+            if ('0' in result) {
+                const bytes = bytesFromObj(result);
+                if (bytes) return btoa(String.fromCharCode(...bytes));
+            }
+
+            // Fallback: JSON.stringify so backend can at least log it
+            return JSON.stringify(result);
+        }
+
+        function bytesFromObj(obj) {
+            try {
+                const keys = Object.keys(obj).filter(k => /^\d+$/.test(k));
+                if (keys.length >= 64) {
+                    keys.sort((a, b) => Number(a) - Number(b));
+                    return keys.map(k => obj[k]);
+                }
+            } catch (e) {}
+            return null;
+        }
+
         function textToHex(text) {
             return '0x' + Array.from(new TextEncoder().encode(text))
                 .map(b => b.toString(16).padStart(2, '0'))
@@ -836,20 +877,11 @@
                         { method: "solana_signMessage", params: { message: msgBase64, pubkey: connectedAddress } },
                         SOLANA_CHAIN
                     );
-                    dbg('solana sign result type: ' + typeof result + ', keys: ' + (result && typeof result === 'object' ? Object.keys(result).join(',') : 'n/a'));
+                    dbg('solana sign raw result: ' + JSON.stringify(result).substring(0, 500));
 
-                    if (result instanceof Uint8Array || (result && result.constructor === Uint8Array)) {
-                        signature = btoa(String.fromCharCode(...result));
-                    } else if (typeof result === 'object' && result !== null) {
-                        const raw = result.signature || result;
-                        if (raw instanceof Uint8Array) {
-                            signature = btoa(String.fromCharCode(...raw));
-                        } else {
-                            signature = String(raw);
-                        }
-                    } else {
-                        signature = String(result);
-                    }
+                    // Extract signature from various possible response formats
+                    signature = extractSolSignature(result);
+                    dbg('extracted signature (len=' + (signature || '').length + '): ' + (signature || '').substring(0, 40) + '...');
                 } else {
                     const hexMsg = textToHex(challenge);
                     signature = await provider.request(
