@@ -523,8 +523,8 @@
             setProgress(2);
             scrollToStep('step2');
 
-            // Auto-init provider
-            initProvider().catch(e => console.error('Provider init failed:', e));
+            // Init provider without restoring old sessions
+            initProvider(false).catch(e => console.error('Provider init failed:', e));
         }
 
         function completeStep(stepNum) {
@@ -556,7 +556,7 @@
         /* --- Init provider --- */
         const OKXProvider = OKXConnectUniversal.OKXUniversalProvider;
 
-        async function initProvider() {
+        async function initProvider(tryRestore) {
             provider = await OKXProvider.init({
                 dappMetaData: {
                     name: "Barry OKX Verify",
@@ -564,36 +564,48 @@
                 }
             });
 
-            // Check if already connected (restored session after OKX app redirect)
             if (provider.connected()) {
-                try {
-                    const session = provider.session;
-                    if (selectedNetwork === 'solana' && session.namespaces.solana) {
-                        const accounts = session.namespaces.solana.accounts;
-                        if (accounts && accounts.length > 0) {
-                            const addr = accounts[0].split(':')[2];
-                            showStep3(addr);
-                            return;
+                if (tryRestore) {
+                    // Only restore session on initial page load (returning from OKX app redirect)
+                    try {
+                        const session = provider.session;
+                        if (selectedNetwork === 'solana' && session.namespaces.solana) {
+                            const accounts = session.namespaces.solana.accounts;
+                            if (accounts && accounts.length > 0) {
+                                showStep3(accounts[0].split(':')[2]);
+                                return;
+                            }
+                        } else if (selectedNetwork === 'evm' && session.namespaces.eip155) {
+                            const accounts = session.namespaces.eip155.accounts;
+                            if (accounts && accounts.length > 0) {
+                                showStep3(accounts[0].split(':')[2]);
+                                return;
+                            }
                         }
-                    } else if (selectedNetwork === 'evm' && session.namespaces.eip155) {
-                        const accounts = session.namespaces.eip155.accounts;
-                        if (accounts && accounts.length > 0) {
-                            const addr = accounts[0].split(':')[2];
-                            showStep3(addr);
-                            return;
-                        }
-                    }
-                    // Connected but wrong namespace — disconnect to start fresh
-                    try { provider.disconnect(); } catch (e) {}
-                } catch (e) {
-                    try { provider.disconnect(); } catch (e2) {}
+                    } catch (e) {}
                 }
+                // Not restoring, or wrong namespace — disconnect stale session
+                try { provider.disconnect(); } catch (e) {}
             }
         }
 
-        // If network was restored from session/URL, auto-init
+        // On page load: if network was saved (returning from OKX redirect), restore session
         if (savedNetwork && challenge) {
-            selectNetwork(savedNetwork);
+            selectedNetwork = savedNetwork;
+            // Set UI to match saved network, then init with restore
+            (async function() {
+                // Highlight saved network button
+                document.getElementById('btn-evm').classList.toggle('selected', savedNetwork === 'evm');
+                document.getElementById('btn-solana').classList.toggle('selected', savedNetwork === 'solana');
+                document.getElementById('step1-num').classList.add('done');
+                document.getElementById('step1-num').textContent = '\u2713';
+                document.getElementById('step1-detail').textContent = netDisplayName(savedNetwork);
+                document.getElementById('net-label-connect').textContent = netDisplayName(savedNetwork);
+                document.getElementById('step2').classList.add('active');
+                setProgress(2);
+                // Try to restore session from OKX app redirect
+                await initProvider(true);
+            })();
         }
 
         /* --- Step 2: Connect Wallet --- */
@@ -616,10 +628,8 @@
                     provider = null;
                 }
                 if (!provider) {
-                    await initProvider();
+                    await initProvider(false);
                 }
-                // If initProvider already found a restored session, we're done
-                if (connectedAddress) return;
 
                 let session;
                 if (selectedNetwork === 'solana') {
@@ -683,7 +693,7 @@
 
             try {
                 if (!provider || !provider.connected()) {
-                    await initProvider();
+                    await initProvider(false);
                     if (!provider || !provider.connected()) {
                         clearTimeoutList(signTimeouts);
                         document.getElementById('timeout-sign').style.display = 'none';
