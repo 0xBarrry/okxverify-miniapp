@@ -800,38 +800,27 @@
                 let signature;
 
                 if (selectedNetwork === 'solana') {
-                    dbg('signing solana message, solanaProvider=' + !!solanaProvider);
+                    dbg('signing solana message via provider.request()');
 
-                    // Prefer OKXSolanaProvider.signMessage() (official SDK approach)
-                    if (solanaProvider) {
-                        const result = await solanaProvider.signMessage(challenge, SOLANA_CHAIN);
-                        dbg('solana sign result keys: ' + Object.keys(result || {}).join(', '));
-                        // result: { publicKey: string, signature: Uint8Array }
-                        if (result.signature instanceof Uint8Array) {
-                            signature = btoa(String.fromCharCode(...result.signature));
+                    // Use provider.request() — same deep link mechanism as EVM personal_sign
+                    const msgBase64 = textToBase64(challenge);
+                    const result = await provider.request(
+                        { method: "solana_signMessage", params: { message: msgBase64 } },
+                        SOLANA_CHAIN
+                    );
+                    dbg('solana sign result type: ' + typeof result + ', keys: ' + (result && typeof result === 'object' ? Object.keys(result).join(',') : 'n/a'));
+
+                    if (result instanceof Uint8Array || (result && result.constructor === Uint8Array)) {
+                        signature = btoa(String.fromCharCode(...result));
+                    } else if (typeof result === 'object' && result !== null) {
+                        const raw = result.signature || result;
+                        if (raw instanceof Uint8Array) {
+                            signature = btoa(String.fromCharCode(...raw));
                         } else {
-                            signature = String(result.signature);
+                            signature = String(raw);
                         }
                     } else {
-                        // Fallback: provider.request() (less reliable)
-                        dbg('fallback: using provider.request for solana_signMessage');
-                        const msgBase64 = textToBase64(challenge);
-                        const result = await provider.request(
-                            { method: "solana_signMessage", params: { message: msgBase64 } },
-                            SOLANA_CHAIN
-                        );
-                        if (result instanceof Uint8Array || (result && result.constructor === Uint8Array)) {
-                            signature = btoa(String.fromCharCode(...result));
-                        } else if (typeof result === 'object' && result !== null) {
-                            const raw = result.signature || result;
-                            if (raw instanceof Uint8Array) {
-                                signature = btoa(String.fromCharCode(...raw));
-                            } else {
-                                signature = String(raw);
-                            }
-                        } else {
-                            signature = String(result);
-                        }
+                        signature = String(result);
                     }
                 } else {
                     const hexMsg = textToHex(challenge);
