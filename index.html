@@ -382,6 +382,9 @@
         const SOLANA_CHAIN = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
         const EVM_CHAIN = "eip155:1";
 
+        /* --- Read challenge from URL param or sessionStorage fallback --- */
+        const params = new URLSearchParams(window.location.search);
+
         /* --- Debug mode --- */
         const DEBUG = params.get('debug') === '1';
         function dbg(msg) {
@@ -393,9 +396,6 @@
             panel.scrollTop = panel.scrollHeight;
             console.log('[DBG]', msg);
         }
-
-        /* --- Read challenge from URL param or sessionStorage fallback --- */
-        const params = new URLSearchParams(window.location.search);
         let challengeB64 = params.get('c');
         let challenge = null;
 
