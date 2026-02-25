@@ -186,6 +186,8 @@
             font-size: 13px;
             margin-top: 12px;
             display: none;
+            white-space: pre-line;
+            line-height: 1.4;
         }
         .success { text-align: center; padding: 40px 20px; }
         .success .icon { font-size: 64px; margin-bottom: 16px; }
@@ -472,7 +474,7 @@
         }
 
         /* --- Step transitions --- */
-        function selectNetwork(net) {
+        async function selectNetwork(net) {
             // If already connected to a wallet, don't allow switching
             if (connectedAddress) return;
 
@@ -523,8 +525,13 @@
             setProgress(2);
             scrollToStep('step2');
 
-            // Init provider without restoring old sessions
-            initProvider(false).catch(e => console.error('Provider init failed:', e));
+            // Pre-init provider NOW so it's ready when user taps Connect
+            // (await ensures no async gap between tap and provider.connect)
+            try {
+                await initProvider(false);
+            } catch (e) {
+                console.error('Provider init failed:', e);
+            }
         }
 
         function completeStep(stepNum) {
@@ -622,12 +629,14 @@
             );
 
             try {
-                // Ensure clean provider state
-                if (provider && provider.connected()) {
+                // Provider should already be pre-initialized from selectNetwork()
+                // Only re-init if somehow missing (keeps async gap minimal for iOS deep links)
+                if (!provider) {
+                    await initProvider(false);
+                } else if (provider.connected()) {
+                    // Stale session — clean up
                     try { provider.disconnect(); } catch (e) {}
                     provider = null;
-                }
-                if (!provider) {
                     await initProvider(false);
                 }
 
@@ -662,18 +671,22 @@
                 clearTimeoutList(connectTimeouts);
                 document.getElementById('timeout-connect').style.display = 'none';
                 const msg = e.message || String(e);
-                console.error('Connect error:', msg, e);
+                console.error('Connect error [' + selectedNetwork + ']:', msg, e);
+
                 if (msg.includes('reject') || msg.includes('cancel') || msg.includes('declined')) {
                     showError('err-connect', 'Connection cancelled. Tap the button to try again.');
                 } else if (msg.includes('not installed') || msg.includes('not found')) {
                     showError('err-connect', 'OKX Wallet app not found. Please install it and try again.');
                 } else if (msg.includes('already connected') || msg.includes('session')) {
-                    // Stale session — disconnect and retry once
-                    try {
-                        if (provider) provider.disconnect();
-                        provider = null;
-                    } catch (e2) {}
+                    try { if (provider) provider.disconnect(); provider = null; } catch (e2) {}
                     showError('err-connect', 'Session conflict. Please tap Connect again.');
+                } else if (selectedNetwork === 'solana') {
+                    // Solana-specific: likely OKX app version or no Solana wallet
+                    showError('err-connect',
+                        'Solana connection failed. Please make sure:\n' +
+                        '• OKX app is updated to the latest version (6.90.1+)\n' +
+                        '• You have a Solana wallet in OKX\n\nError: ' + msg
+                    );
                 } else {
                     showError('err-connect', 'Could not connect to OKX Wallet: ' + msg);
                 }
