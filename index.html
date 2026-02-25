@@ -6,6 +6,7 @@
     <title>Barry OKX Verify</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@okxconnect/universal-provider@1.9.1/dist/okxconnect_universal.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@okxconnect/solana-provider@1.9.1/dist/okxconnect_solana.min.js"></script>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -239,6 +240,25 @@
             display: none;
             text-align: center;
         }
+
+        /* --- Debug panel --- */
+        .debug-panel {
+            display: none;
+            width: 100%;
+            max-width: 360px;
+            background: rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.1);
+            border-radius: 8px;
+            padding: 12px;
+            margin-top: 12px;
+            font-family: 'SF Mono', 'Courier New', monospace;
+            font-size: 11px;
+            color: #aaa;
+            word-break: break-all;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+        .debug-panel.visible { display: block; }
     </style>
 </head>
 <body>
@@ -328,6 +348,9 @@
                 <p>Verifying with OKX...<br>Returning to the bot.</p>
             </div>
         </div>
+
+        <!-- Debug panel (shown with ?debug=1) -->
+        <div id="debug-panel" class="debug-panel"></div>
     </div>
 
     <script>
@@ -349,6 +372,7 @@
         }
 
         let provider = null;
+        let solanaProvider = null; // OKXSolanaProvider wrapper
         let connectedAddress = null;
         let selectedNetwork = null; // 'evm' or 'solana'
         let connectTimeouts = [];
@@ -357,6 +381,18 @@
 
         const SOLANA_CHAIN = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
         const EVM_CHAIN = "eip155:1";
+
+        /* --- Debug mode --- */
+        const DEBUG = params.get('debug') === '1';
+        function dbg(msg) {
+            if (!DEBUG) return;
+            const panel = document.getElementById('debug-panel');
+            panel.classList.add('visible');
+            const ts = new Date().toLocaleTimeString();
+            panel.innerHTML += '<div>[' + ts + '] ' + msg + '</div>';
+            panel.scrollTop = panel.scrollHeight;
+            console.log('[DBG]', msg);
+        }
 
         /* --- Read challenge from URL param or sessionStorage fallback --- */
         const params = new URLSearchParams(window.location.search);
@@ -475,6 +511,7 @@
 
         /* --- Step transitions --- */
         async function selectNetwork(net) {
+            dbg('selectNetwork(' + net + ')');
             // If already connected to a wallet, don't allow switching
             if (connectedAddress) return;
 
@@ -562,8 +599,10 @@
 
         /* --- Init provider --- */
         const OKXProvider = OKXConnectUniversal.OKXUniversalProvider;
+        const OKXSolProvider = (typeof OKXConnectSolana !== 'undefined') ? OKXConnectSolana.OKXSolanaProvider : null;
 
         async function initProvider(tryRestore) {
+            dbg('initProvider(tryRestore=' + tryRestore + ')');
             provider = await OKXProvider.init({
                 dappMetaData: {
                     name: "Barry OKX Verify",
@@ -571,27 +610,52 @@
                 }
             });
 
+            // Init Solana provider wrapper if available
+            if (OKXSolProvider && provider) {
+                try {
+                    solanaProvider = new OKXSolProvider(provider);
+                    dbg('OKXSolanaProvider initialized');
+                } catch (e) {
+                    dbg('OKXSolanaProvider init failed: ' + e.message);
+                }
+            }
+
+            dbg('provider.connected()=' + provider.connected());
+
             if (provider.connected()) {
                 if (tryRestore) {
                     // Only restore session on initial page load (returning from OKX app redirect)
                     try {
                         const session = provider.session;
-                        if (selectedNetwork === 'solana' && session.namespaces.solana) {
-                            const accounts = session.namespaces.solana.accounts;
-                            if (accounts && accounts.length > 0) {
-                                showStep3(accounts[0].split(':')[2]);
-                                return;
+                        const nsKeys = session && session.namespaces ? Object.keys(session.namespaces) : [];
+                        dbg('session namespaces: [' + nsKeys.join(', ') + ']');
+
+                        if (selectedNetwork === 'solana') {
+                            // Try both 'solana' and full chain ID as namespace key
+                            const solNs = session.namespaces.solana || session.namespaces[SOLANA_CHAIN];
+                            if (solNs) {
+                                const accounts = solNs.accounts;
+                                dbg('solana accounts: ' + JSON.stringify(accounts));
+                                if (accounts && accounts.length > 0) {
+                                    showStep3(accounts[0].split(':').pop());
+                                    return;
+                                }
                             }
+                            dbg('solana namespace not found in session');
                         } else if (selectedNetwork === 'evm' && session.namespaces.eip155) {
                             const accounts = session.namespaces.eip155.accounts;
+                            dbg('eip155 accounts: ' + JSON.stringify(accounts));
                             if (accounts && accounts.length > 0) {
                                 showStep3(accounts[0].split(':')[2]);
                                 return;
                             }
                         }
-                    } catch (e) {}
+                    } catch (e) {
+                        dbg('session restore error: ' + e.message);
+                    }
                 }
                 // Not restoring, or wrong namespace — disconnect stale session
+                dbg('disconnecting stale session');
                 try { provider.disconnect(); } catch (e) {}
             }
         }
@@ -632,13 +696,17 @@
                 // Provider should already be pre-initialized from selectNetwork()
                 // Only re-init if somehow missing (keeps async gap minimal for iOS deep links)
                 if (!provider) {
+                    dbg('provider missing, re-initializing');
                     await initProvider(false);
                 } else if (provider.connected()) {
                     // Stale session — clean up
+                    dbg('stale session detected, reconnecting');
                     try { provider.disconnect(); } catch (e) {}
                     provider = null;
                     await initProvider(false);
                 }
+
+                dbg('calling provider.connect() for ' + selectedNetwork);
 
                 let session;
                 if (selectedNetwork === 'solana') {
@@ -648,10 +716,19 @@
                                 chains: [SOLANA_CHAIN]
                             }
                         },
+                        optionalNamespaces: {
+                            solana: {
+                                chains: [SOLANA_CHAIN]
+                            }
+                        },
                         sessionConfig: { redirect: "tg://resolve" }
                     });
-                    const accounts = session.namespaces.solana.accounts;
-                    showStep3(accounts[0].split(':')[2]);
+                    dbg('solana session received, namespaces: ' + Object.keys(session.namespaces || {}).join(', '));
+                    const ns = session.namespaces.solana || session.namespaces[SOLANA_CHAIN];
+                    if (!ns || !ns.accounts || ns.accounts.length === 0) {
+                        throw new Error('No Solana accounts in session (namespaces: ' + Object.keys(session.namespaces || {}).join(', ') + ')');
+                    }
+                    showStep3(ns.accounts[0].split(':').pop());
                 } else {
                     session = await provider.connect({
                         namespaces: {
@@ -662,6 +739,7 @@
                         },
                         sessionConfig: { redirect: "tg://resolve" }
                     });
+                    dbg('evm session received');
                     const accounts = session.namespaces.eip155.accounts;
                     showStep3(accounts[0].split(':')[2]);
                 }
@@ -671,7 +749,9 @@
                 clearTimeoutList(connectTimeouts);
                 document.getElementById('timeout-connect').style.display = 'none';
                 const msg = e.message || String(e);
-                console.error('Connect error [' + selectedNetwork + ']:', msg, e);
+                const code = e.code || 'n/a';
+                console.error('Connect error [' + selectedNetwork + ']:', code, msg, e);
+                dbg('connect ERROR code=' + code + ' msg=' + msg);
 
                 if (msg.includes('reject') || msg.includes('cancel') || msg.includes('declined')) {
                     showError('err-connect', 'Connection cancelled. Tap the button to try again.');
@@ -681,14 +761,14 @@
                     try { if (provider) provider.disconnect(); provider = null; } catch (e2) {}
                     showError('err-connect', 'Session conflict. Please tap Connect again.');
                 } else if (selectedNetwork === 'solana') {
-                    // Solana-specific: likely OKX app version or no Solana wallet
                     showError('err-connect',
-                        'Solana connection failed. Please make sure:\n' +
-                        '• OKX app is updated to the latest version (6.90.1+)\n' +
-                        '• You have a Solana wallet in OKX\n\nError: ' + msg
+                        'Solana connection failed.\n' +
+                        'Error code: ' + code + '\n' +
+                        'Error: ' + msg + '\n\n' +
+                        'Make sure OKX app is v6.90.1+ and you have a Solana wallet.'
                     );
                 } else {
-                    showError('err-connect', 'Could not connect to OKX Wallet: ' + msg);
+                    showError('err-connect', 'Could not connect to OKX Wallet.\nError code: ' + code + '\nError: ' + msg);
                 }
                 setLoading('btn-connect', false, 'Connect OKX Wallet');
             }
@@ -706,6 +786,7 @@
 
             try {
                 if (!provider || !provider.connected()) {
+                    dbg('provider not connected, re-initializing');
                     await initProvider(false);
                     if (!provider || !provider.connected()) {
                         clearTimeoutList(signTimeouts);
@@ -719,22 +800,38 @@
                 let signature;
 
                 if (selectedNetwork === 'solana') {
-                    const msgBase64 = textToBase64(challenge);
-                    const result = await provider.request(
-                        { method: "solana_signMessage", params: { message: msgBase64 } },
-                        SOLANA_CHAIN
-                    );
-                    if (result instanceof Uint8Array || (result && result.constructor === Uint8Array)) {
-                        signature = btoa(String.fromCharCode(...result));
-                    } else if (typeof result === 'object' && result !== null) {
-                        const raw = result.signature || result;
-                        if (raw instanceof Uint8Array) {
-                            signature = btoa(String.fromCharCode(...raw));
+                    dbg('signing solana message, solanaProvider=' + !!solanaProvider);
+
+                    // Prefer OKXSolanaProvider.signMessage() (official SDK approach)
+                    if (solanaProvider) {
+                        const result = await solanaProvider.signMessage(challenge, SOLANA_CHAIN);
+                        dbg('solana sign result keys: ' + Object.keys(result || {}).join(', '));
+                        // result: { publicKey: string, signature: Uint8Array }
+                        if (result.signature instanceof Uint8Array) {
+                            signature = btoa(String.fromCharCode(...result.signature));
                         } else {
-                            signature = String(raw);
+                            signature = String(result.signature);
                         }
                     } else {
-                        signature = String(result);
+                        // Fallback: provider.request() (less reliable)
+                        dbg('fallback: using provider.request for solana_signMessage');
+                        const msgBase64 = textToBase64(challenge);
+                        const result = await provider.request(
+                            { method: "solana_signMessage", params: { message: msgBase64 } },
+                            SOLANA_CHAIN
+                        );
+                        if (result instanceof Uint8Array || (result && result.constructor === Uint8Array)) {
+                            signature = btoa(String.fromCharCode(...result));
+                        } else if (typeof result === 'object' && result !== null) {
+                            const raw = result.signature || result;
+                            if (raw instanceof Uint8Array) {
+                                signature = btoa(String.fromCharCode(...raw));
+                            } else {
+                                signature = String(raw);
+                            }
+                        } else {
+                            signature = String(result);
+                        }
                     }
                 } else {
                     const hexMsg = textToHex(challenge);
@@ -744,6 +841,7 @@
                     );
                 }
 
+                dbg('signature obtained, length=' + (signature || '').length);
                 clearTimeoutList(signTimeouts);
                 document.getElementById('timeout-sign').style.display = 'none';
 
@@ -767,12 +865,14 @@
                 clearTimeoutList(signTimeouts);
                 document.getElementById('timeout-sign').style.display = 'none';
                 const msg = e.message || String(e);
+                const code = e.code || 'n/a';
+                dbg('sign ERROR code=' + code + ' msg=' + msg);
                 if (msg.includes('reject') || msg.includes('cancel')) {
                     showError('err-sign', 'Signing cancelled. You can try again \u2014 no fees involved.');
                 } else if (msg.includes('not connected') || msg.includes('disconnected')) {
                     showError('err-sign', 'Wallet disconnected. Please close this page and tap "Verify" in the bot again.');
                 } else {
-                    showError('err-sign', 'Signing failed. Please try again or restart from the bot.');
+                    showError('err-sign', 'Signing failed (code: ' + code + '): ' + msg);
                 }
                 setLoading('btn-sign', false, 'Sign Verification Message');
             }
