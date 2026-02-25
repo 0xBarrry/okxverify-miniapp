@@ -196,75 +196,141 @@
         .success .icon { font-size: 64px; margin-bottom: 16px; }
         .success h2 { font-size: 20px; margin-bottom: 8px; color: #27ae60; }
         .success p { font-size: 14px; color: var(--tg-theme-hint-color, #8a8a9a); }
+
+        /* --- Desktop blocker --- */
+        .desktop-blocker {
+            display: none;
+            text-align: center;
+            padding: 40px 20px;
+        }
+        .desktop-blocker .icon { font-size: 64px; margin-bottom: 16px; }
+        .desktop-blocker h2 { font-size: 20px; margin-bottom: 12px; }
+        .desktop-blocker p {
+            font-size: 14px;
+            color: var(--tg-theme-hint-color, #8a8a9a);
+            line-height: 1.5;
+        }
+
+        /* --- Challenge error state --- */
+        .challenge-error {
+            display: none;
+            text-align: center;
+            padding: 40px 20px;
+            width: 100%;
+            max-width: 360px;
+            background: var(--tg-theme-secondary-bg-color, #16213e);
+            border-radius: 12px;
+        }
+        .challenge-error .icon { font-size: 48px; margin-bottom: 16px; }
+        .challenge-error h2 { font-size: 18px; margin-bottom: 8px; color: #e74c3c; }
+        .challenge-error p {
+            font-size: 14px;
+            color: var(--tg-theme-hint-color, #8a8a9a);
+            margin-bottom: 20px;
+            line-height: 1.5;
+        }
+        .challenge-error button {
+            max-width: 240px;
+            margin: 0 auto;
+        }
+
+        /* --- Timeout status message --- */
+        .timeout-status {
+            font-size: 12px;
+            color: var(--tg-theme-hint-color, #8a8a9a);
+            margin-top: 8px;
+            display: none;
+            text-align: center;
+        }
     </style>
 </head>
 <body>
-    <div class="logo">🔐</div>
-    <h1>Barry OKX Verify</h1>
-    <p class="subtitle">Verify your OKX Wallet in three quick steps</p>
-
-    <!-- Progress bar -->
-    <div class="progress">
-        <div class="progress-dot active" id="dot1"></div>
-        <div class="progress-line" id="line1"></div>
-        <div class="progress-dot" id="dot2"></div>
-        <div class="progress-line" id="line2"></div>
-        <div class="progress-dot" id="dot3"></div>
+    <!-- Desktop blocker (hidden by default, shown on desktop) -->
+    <div id="desktop-blocker" class="desktop-blocker">
+        <div class="icon">📱</div>
+        <h2>Open on Mobile</h2>
+        <p>This verification page works only in the<br>Telegram mobile app with OKX Wallet installed.<br><br>Please open the bot on your phone and tap "Verify" again.</p>
     </div>
 
-    <!-- Step 1: Choose Network -->
-    <div id="step1" class="step active">
-        <div class="step-header">
-            <div id="step1-num" class="step-num">1</div>
-            <div class="step-title">Select Network</div>
-            <div id="step1-detail" class="step-detail"></div>
-        </div>
-        <p class="step-desc">Choose which wallet type to connect:</p>
-        <div class="network-btns">
-            <button id="btn-evm" onclick="selectNetwork('evm')">
-                <span class="net-icon">⟠</span>
-                <span class="net-label">EVM</span>
-                <span class="net-desc">ETH, Base, BNB, etc.</span>
-            </button>
-            <button id="btn-solana" onclick="selectNetwork('solana')">
-                <span class="net-icon">◎</span>
-                <span class="net-label">Solana</span>
-                <span class="net-desc">SOL, SPL tokens</span>
-            </button>
-        </div>
-        <button class="change-link" id="change-network" style="display:none" onclick="resetNetwork()">Change network</button>
-        <div id="err-network" class="error"></div>
-    </div>
+    <!-- Main content (hidden on desktop) -->
+    <div id="main-content">
+        <div class="logo">🔐</div>
+        <h1>Barry OKX Verify</h1>
+        <p class="subtitle">Verify your OKX Wallet in three quick steps</p>
 
-    <!-- Step 2: Connect -->
-    <div id="step2" class="step">
-        <div class="step-header">
-            <div id="step2-num" class="step-num">2</div>
-            <div class="step-title">Connect OKX Wallet</div>
+        <!-- Challenge error state -->
+        <div id="challenge-error" class="challenge-error">
+            <div class="icon">⏳</div>
+            <h2>Session Expired</h2>
+            <p>Your verification link has expired or is invalid.<br>Go back to the bot and tap the Verify button to get a new link.</p>
+            <button onclick="tg.close()">Back to Bot</button>
         </div>
-        <p class="step-desc">Tap below to connect your <span id="net-label-connect">EVM</span> wallet. This will open the OKX app.</p>
-        <button id="btn-connect" onclick="connectWallet()">Connect OKX Wallet</button>
-        <div id="err-connect" class="error"></div>
-    </div>
 
-    <!-- Step 3: Sign -->
-    <div id="step3" class="step">
-        <div class="step-header">
-            <div id="step3-num" class="step-num">3</div>
-            <div class="step-title">Verify Ownership</div>
+        <!-- Progress bar -->
+        <div id="progress-bar" class="progress">
+            <div class="progress-dot active" id="dot1"></div>
+            <div class="progress-line" id="line1"></div>
+            <div class="progress-dot" id="dot2"></div>
+            <div class="progress-line" id="line2"></div>
+            <div class="progress-dot" id="dot3"></div>
         </div>
-        <p class="step-desc">Confirm ownership by signing a verification message. This is free and does not send any transaction.</p>
-        <div id="wallet-addr" class="addr"></div>
-        <button id="btn-sign" onclick="signChallenge()">Sign to Verify</button>
-        <div id="err-sign" class="error"></div>
-    </div>
 
-    <!-- Step 4: Success (shown briefly before sendData closes the app) -->
-    <div id="step4" class="step">
-        <div class="success">
-            <div class="icon">✅</div>
-            <h2>Wallet Submitted</h2>
-            <p>Verifying with OKX...<br>Returning to the bot.</p>
+        <!-- Step 1: Choose Network -->
+        <div id="step1" class="step active">
+            <div class="step-header">
+                <div id="step1-num" class="step-num">1</div>
+                <div class="step-title">Select Network</div>
+                <div id="step1-detail" class="step-detail"></div>
+            </div>
+            <p class="step-desc">Choose which wallet type to connect:</p>
+            <div class="network-btns">
+                <button id="btn-evm" onclick="selectNetwork('evm')">
+                    <span class="net-icon">⟠</span>
+                    <span class="net-label">EVM</span>
+                    <span class="net-desc">ETH, Base, BNB, etc.</span>
+                </button>
+                <button id="btn-solana" onclick="selectNetwork('solana')">
+                    <span class="net-icon">◎</span>
+                    <span class="net-label">Solana</span>
+                    <span class="net-desc">SOL, SPL tokens</span>
+                </button>
+            </div>
+            <button class="change-link" id="change-network" style="display:none" onclick="resetNetwork()">Change network</button>
+            <div id="err-network" class="error"></div>
+        </div>
+
+        <!-- Step 2: Connect -->
+        <div id="step2" class="step">
+            <div class="step-header">
+                <div id="step2-num" class="step-num">2</div>
+                <div class="step-title">Connect OKX Wallet</div>
+            </div>
+            <p class="step-desc">Tap below to open the OKX app and connect your <span id="net-label-connect">EVM</span> wallet.</p>
+            <button id="btn-connect" onclick="connectWallet()">Connect OKX Wallet</button>
+            <div id="timeout-connect" class="timeout-status"></div>
+            <div id="err-connect" class="error"></div>
+        </div>
+
+        <!-- Step 3: Sign -->
+        <div id="step3" class="step">
+            <div class="step-header">
+                <div id="step3-num" class="step-num">3</div>
+                <div class="step-title">Confirm Ownership</div>
+            </div>
+            <p class="step-desc">Sign a free verification message to prove this wallet is yours. No transaction will be sent.</p>
+            <div id="wallet-addr" class="addr"></div>
+            <button id="btn-sign" onclick="signChallenge()">Sign Verification Message</button>
+            <div id="timeout-sign" class="timeout-status"></div>
+            <div id="err-sign" class="error"></div>
+        </div>
+
+        <!-- Step 4: Success (shown briefly before sendData closes the app) -->
+        <div id="step4" class="step">
+            <div class="success">
+                <div class="icon">✅</div>
+                <h2>Wallet Submitted</h2>
+                <p>Verifying with OKX...<br>Returning to the bot.</p>
+            </div>
         </div>
     </div>
 
@@ -274,20 +340,35 @@
         tg.ready();
         tg.expand();
 
+        /* --- Desktop detection --- */
+        function isMobile() {
+            return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
+                || (navigator.maxTouchPoints && navigator.maxTouchPoints > 2);
+        }
+
+        if (!isMobile()) {
+            document.getElementById('desktop-blocker').style.display = 'block';
+            document.getElementById('main-content').style.display = 'none';
+            // Stop here — don't init provider or process challenge
+            throw new Error('Desktop detected — halting Mini App');
+        }
+
         let provider = null;
         let connectedAddress = null;
         let selectedNetwork = null; // 'evm' or 'solana'
-        let connectTimeout = null;
-        let signTimeout = null;
+        let connectTimeouts = [];
+        let signTimeouts = [];
 
         const SOLANA_CHAIN = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
         const EVM_CHAIN = "eip155:1";
-        const TIMEOUT_MS = 120000; // 2 minutes
 
         /* --- Read challenge from URL param or sessionStorage fallback --- */
         const params = new URLSearchParams(window.location.search);
         let challengeB64 = params.get('c');
         let challenge = null;
+
+        // Also read network from URL param (survives OKX app redirect)
+        const urlNetwork = params.get('net');
 
         if (!challengeB64) {
             challengeB64 = sessionStorage.getItem('okx_challenge_b64');
@@ -303,15 +384,17 @@
             }
         }
 
-        // Restore network selection after OKX app redirect
-        const savedNetwork = sessionStorage.getItem('okx_network');
+        // Restore network: URL param first (most reliable), then sessionStorage
+        const savedNetwork = urlNetwork || sessionStorage.getItem('okx_network');
         if (savedNetwork) {
             selectedNetwork = savedNetwork;
         }
 
         if (!challenge) {
-            showError('err-network', 'Invalid or missing verification challenge. Please go back to the bot and tap /start first.');
-            document.querySelectorAll('.network-btns button').forEach(b => b.disabled = true);
+            // Show the challenge error state instead of just an error message
+            document.getElementById('progress-bar').style.display = 'none';
+            document.getElementById('step1').style.display = 'none';
+            document.getElementById('challenge-error').style.display = 'block';
         }
 
         /* --- Helpers --- */
@@ -349,6 +432,45 @@
             }, 100);
         }
 
+        /* --- Progressive timeout --- */
+        function clearTimeoutList(list) {
+            list.forEach(t => clearTimeout(t));
+            list.length = 0;
+        }
+
+        function startProgressiveTimeout(statusId, errorId, btnId, btnText, onFinalTimeout) {
+            const statusEl = document.getElementById(statusId);
+            const timeouts = [];
+
+            // 30s — still waiting
+            timeouts.push(setTimeout(() => {
+                statusEl.textContent = 'Waiting for OKX app response...';
+                statusEl.style.display = 'block';
+            }, 30000));
+
+            // 60s — taking longer
+            timeouts.push(setTimeout(() => {
+                statusEl.textContent = 'Still waiting — make sure OKX app is open and check for a popup there.';
+            }, 60000));
+
+            // 120s — timed out
+            timeouts.push(setTimeout(() => {
+                statusEl.style.display = 'none';
+                showError(errorId, 'Connection timed out. Make sure the OKX app is installed and try again.');
+                setLoading(btnId, false, btnText);
+                if (onFinalTimeout) onFinalTimeout();
+            }, 120000));
+
+            return timeouts;
+        }
+
+        /* --- Build URL with params (for network persistence) --- */
+        function buildUrlWithNetwork(net) {
+            const url = new URL(window.location.href);
+            url.searchParams.set('net', net);
+            return url.toString();
+        }
+
         /* --- Progress bar --- */
         function setProgress(step) {
             const dot1 = document.getElementById('dot1');
@@ -364,10 +486,21 @@
             dot3.className = 'progress-dot ' + (step >= 3 ? (step > 3 ? 'done' : 'active') : '');
         }
 
+        /* --- Network label helper --- */
+        function netDisplayName(net) {
+            return net === 'solana' ? 'Solana' : 'EVM';
+        }
+
         /* --- Step transitions --- */
         function selectNetwork(net) {
             selectedNetwork = net;
             sessionStorage.setItem('okx_network', net);
+
+            // Update URL with network param (so it survives OKX app redirect)
+            try {
+                const newUrl = buildUrlWithNetwork(net);
+                window.history.replaceState(null, '', newUrl);
+            } catch (e) { /* ignore if replaceState fails */ }
 
             // Highlight selected button
             document.getElementById('btn-evm').classList.toggle('selected', net === 'evm');
@@ -377,13 +510,13 @@
             document.getElementById('step1-num').classList.add('done');
             document.getElementById('step1-num').textContent = '\u2713';
             document.querySelectorAll('.network-btns button').forEach(b => b.disabled = true);
-            const netName = net === 'evm' ? 'EVM' : 'Solana';
+            const netName = netDisplayName(net);
             document.getElementById('step1-detail').textContent = netName;
             document.getElementById('change-network').style.display = 'inline-block';
 
             // Update step 2 labels
             document.getElementById('net-label-connect').textContent = netName;
-            document.getElementById('btn-connect').textContent = 'Connect OKX ' + netName + ' Wallet';
+            document.getElementById('btn-connect').textContent = 'Connect OKX Wallet';
             document.getElementById('step2').classList.add('active');
 
             // Progress + scroll
@@ -401,6 +534,13 @@
             selectedNetwork = null;
             sessionStorage.removeItem('okx_network');
 
+            // Remove net from URL
+            try {
+                const url = new URL(window.location.href);
+                url.searchParams.delete('net');
+                window.history.replaceState(null, '', url.toString());
+            } catch (e) {}
+
             // Reset step 1 UI
             document.getElementById('step1-num').classList.remove('done');
             document.getElementById('step1-num').textContent = '1';
@@ -414,6 +554,7 @@
             // Hide step 2
             document.getElementById('step2').classList.remove('active');
             hideError('err-connect');
+            document.getElementById('timeout-connect').style.display = 'none';
             setLoading('btn-connect', false, 'Connect OKX Wallet');
 
             // Disconnect provider if needed
@@ -435,7 +576,8 @@
             document.getElementById('step2-num').classList.add('done');
             document.getElementById('step2-num').textContent = '\u2713';
             document.getElementById('btn-connect').style.display = 'none';
-            if (connectTimeout) { clearTimeout(connectTimeout); connectTimeout = null; }
+            document.getElementById('timeout-connect').style.display = 'none';
+            clearTimeoutList(connectTimeouts);
 
             // Grey out completed steps
             completeStep(1);
@@ -483,7 +625,7 @@
             }
         }
 
-        // If network was restored from session, auto-init
+        // If network was restored from session/URL, auto-init
         if (savedNetwork && challenge) {
             selectNetwork(savedNetwork);
         }
@@ -491,14 +633,13 @@
         /* --- Step 2: Connect Wallet --- */
         async function connectWallet() {
             hideError('err-connect');
-            const netLabel = selectedNetwork === 'solana' ? 'Solana' : 'EVM';
-            setLoading('btn-connect', true, 'Connecting...');
+            document.getElementById('timeout-connect').style.display = 'none';
+            setLoading('btn-connect', true, 'Opening OKX app...');
 
-            // Timeout fallback
-            connectTimeout = setTimeout(() => {
-                showError('err-connect', 'Taking too long? Close this and tap /start in the bot to retry.');
-                setLoading('btn-connect', false, 'Connect OKX ' + netLabel + ' Wallet');
-            }, TIMEOUT_MS);
+            // Progressive timeout
+            connectTimeouts = startProgressiveTimeout(
+                'timeout-connect', 'err-connect', 'btn-connect', 'Connect OKX Wallet'
+            );
 
             try {
                 if (!provider) {
@@ -532,35 +673,39 @@
                 }
 
             } catch (e) {
-                if (connectTimeout) { clearTimeout(connectTimeout); connectTimeout = null; }
+                clearTimeoutList(connectTimeouts);
+                document.getElementById('timeout-connect').style.display = 'none';
                 const msg = e.message || String(e);
                 if (msg.includes('reject') || msg.includes('cancel')) {
-                    showError('err-connect', 'Connection cancelled. Tap to try again.');
+                    showError('err-connect', 'Connection cancelled. Tap the button to try again.');
+                } else if (msg.includes('not installed') || msg.includes('not found')) {
+                    showError('err-connect', 'OKX Wallet app not found. Please install it and try again.');
                 } else {
-                    showError('err-connect', 'Connection failed: ' + msg);
+                    showError('err-connect', 'Could not connect to OKX Wallet. Please try again.');
                 }
-                setLoading('btn-connect', false, 'Connect OKX ' + netLabel + ' Wallet');
+                setLoading('btn-connect', false, 'Connect OKX Wallet');
             }
         }
 
         /* --- Step 3: Sign Challenge --- */
         async function signChallenge() {
             hideError('err-sign');
-            setLoading('btn-sign', true, 'Signing...');
+            document.getElementById('timeout-sign').style.display = 'none';
+            setLoading('btn-sign', true, 'Waiting for signature...');
 
-            // Timeout fallback
-            signTimeout = setTimeout(() => {
-                showError('err-sign', 'Taking too long? Close this and tap /start in the bot to retry.');
-                setLoading('btn-sign', false, 'Sign to Verify');
-            }, TIMEOUT_MS);
+            // Progressive timeout
+            signTimeouts = startProgressiveTimeout(
+                'timeout-sign', 'err-sign', 'btn-sign', 'Sign Verification Message'
+            );
 
             try {
                 if (!provider || !provider.connected()) {
                     await initProvider();
                     if (!provider || !provider.connected()) {
-                        if (signTimeout) { clearTimeout(signTimeout); signTimeout = null; }
-                        showError('err-sign', 'Wallet disconnected. Please close and tap the verify button in the bot again.');
-                        setLoading('btn-sign', false, 'Sign to Verify');
+                        clearTimeoutList(signTimeouts);
+                        document.getElementById('timeout-sign').style.display = 'none';
+                        showError('err-sign', 'Wallet disconnected. Please close this page and tap "Verify" in the bot again.');
+                        setLoading('btn-sign', false, 'Sign Verification Message');
                         return;
                     }
                 }
@@ -573,7 +718,19 @@
                         { method: "solana_signMessage", params: { message: msgBase64 } },
                         SOLANA_CHAIN
                     );
-                    signature = typeof result === 'object' ? (result.signature || result) : result;
+                    // OKX may return: string, {signature: str}, or Uint8Array
+                    if (result instanceof Uint8Array || (result && result.constructor === Uint8Array)) {
+                        signature = btoa(String.fromCharCode(...result));
+                    } else if (typeof result === 'object' && result !== null) {
+                        const raw = result.signature || result;
+                        if (raw instanceof Uint8Array) {
+                            signature = btoa(String.fromCharCode(...raw));
+                        } else {
+                            signature = String(raw);
+                        }
+                    } else {
+                        signature = String(result);
+                    }
                 } else {
                     const hexMsg = textToHex(challenge);
                     signature = await provider.request(
@@ -582,7 +739,8 @@
                     );
                 }
 
-                if (signTimeout) { clearTimeout(signTimeout); signTimeout = null; }
+                clearTimeoutList(signTimeouts);
+                document.getElementById('timeout-sign').style.display = 'none';
 
                 // Show success UI before sendData (sendData closes the WebApp)
                 document.getElementById('step3-num').classList.add('done');
@@ -604,16 +762,17 @@
                 setTimeout(() => tg.close(), 3000);
 
             } catch (e) {
-                if (signTimeout) { clearTimeout(signTimeout); signTimeout = null; }
+                clearTimeoutList(signTimeouts);
+                document.getElementById('timeout-sign').style.display = 'none';
                 const msg = e.message || String(e);
                 if (msg.includes('reject') || msg.includes('cancel')) {
-                    showError('err-sign', 'Signing cancelled. Tap to try again.');
+                    showError('err-sign', 'Signing cancelled. You can try again \u2014 no fees involved.');
                 } else if (msg.includes('not connected') || msg.includes('disconnected')) {
-                    showError('err-sign', 'Wallet disconnected. Please close and tap the verify button in the bot again.');
+                    showError('err-sign', 'Wallet disconnected. Please close this page and tap "Verify" in the bot again.');
                 } else {
-                    showError('err-sign', 'Signing failed: ' + msg);
+                    showError('err-sign', 'Signing failed. Please try again or restart from the bot.');
                 }
-                setLoading('btn-sign', false, 'Sign to Verify');
+                setLoading('btn-sign', false, 'Sign Verification Message');
             }
         }
     </script>
