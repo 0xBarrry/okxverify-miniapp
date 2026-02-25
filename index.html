@@ -18,8 +18,17 @@
             align-items: center;
             padding: 24px 16px;
         }
+
+        /* --- Main content wrapper (must mirror body flex centering) --- */
+        #main-content {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            width: 100%;
+        }
+
         .logo { font-size: 48px; margin-bottom: 8px; }
-        h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; }
+        h1 { font-size: 22px; font-weight: 600; margin-bottom: 4px; text-align: center; }
         .subtitle {
             font-size: 14px;
             color: var(--tg-theme-hint-color, #8a8a9a);
@@ -82,8 +91,7 @@
         }
         .step.completed .step-header { margin-bottom: 0; }
         .step.completed .step-desc,
-        .step.completed .network-btns,
-        .step.completed .change-link { display: none; }
+        .step.completed .network-btns { display: none; }
         .step-num {
             width: 28px; height: 28px;
             border-radius: 50%;
@@ -158,19 +166,6 @@
         .network-btns button .net-desc {
             font-size: 11px;
             color: var(--tg-theme-hint-color, #8a8a9a);
-        }
-        .change-link {
-            display: inline-block;
-            margin-top: 12px;
-            padding: 8px 0;
-            font-size: 13px;
-            color: var(--tg-theme-link-color, #5bb8f6);
-            cursor: pointer;
-            text-decoration: underline;
-            background: none;
-            border: none;
-            width: auto;
-            font-weight: 400;
         }
         .spinner {
             display: inline-block;
@@ -295,7 +290,6 @@
                     <span class="net-desc">SOL, SPL tokens</span>
                 </button>
             </div>
-            <button class="change-link" id="change-network" style="display:none" onclick="resetNetwork()">Change network</button>
             <div id="err-network" class="error"></div>
         </div>
 
@@ -349,7 +343,6 @@
         if (!isMobile()) {
             document.getElementById('desktop-blocker').style.display = 'block';
             document.getElementById('main-content').style.display = 'none';
-            // Stop here — don't init provider or process challenge
             throw new Error('Desktop detected — halting Mini App');
         }
 
@@ -358,6 +351,7 @@
         let selectedNetwork = null; // 'evm' or 'solana'
         let connectTimeouts = [];
         let signTimeouts = [];
+        let isConnecting = false; // guard against double-click
 
         const SOLANA_CHAIN = "solana:5eykt4UsFv8P8NJdTREpY1vzqKqZKvdp";
         const EVM_CHAIN = "eip155:1";
@@ -367,7 +361,6 @@
         let challengeB64 = params.get('c');
         let challenge = null;
 
-        // Also read network from URL param (survives OKX app redirect)
         const urlNetwork = params.get('net');
 
         if (!challengeB64) {
@@ -384,14 +377,12 @@
             }
         }
 
-        // Restore network: URL param first (most reliable), then sessionStorage
         const savedNetwork = urlNetwork || sessionStorage.getItem('okx_network');
         if (savedNetwork) {
             selectedNetwork = savedNetwork;
         }
 
         if (!challenge) {
-            // Show the challenge error state instead of just an error message
             document.getElementById('progress-bar').style.display = 'none';
             document.getElementById('step1').style.display = 'none';
             document.getElementById('challenge-error').style.display = 'block';
@@ -432,43 +423,37 @@
             }, 100);
         }
 
+        function netDisplayName(net) {
+            return net === 'solana' ? 'Solana' : 'EVM';
+        }
+
         /* --- Progressive timeout --- */
         function clearTimeoutList(list) {
             list.forEach(t => clearTimeout(t));
             list.length = 0;
         }
 
-        function startProgressiveTimeout(statusId, errorId, btnId, btnText, onFinalTimeout) {
+        function startProgressiveTimeout(statusId, errorId, btnId, btnText) {
             const statusEl = document.getElementById(statusId);
             const timeouts = [];
 
-            // 30s — still waiting
             timeouts.push(setTimeout(() => {
                 statusEl.textContent = 'Waiting for OKX app response...';
                 statusEl.style.display = 'block';
             }, 30000));
 
-            // 60s — taking longer
             timeouts.push(setTimeout(() => {
                 statusEl.textContent = 'Still waiting — make sure OKX app is open and check for a popup there.';
             }, 60000));
 
-            // 120s — timed out
             timeouts.push(setTimeout(() => {
                 statusEl.style.display = 'none';
                 showError(errorId, 'Connection timed out. Make sure the OKX app is installed and try again.');
                 setLoading(btnId, false, btnText);
-                if (onFinalTimeout) onFinalTimeout();
+                isConnecting = false;
             }, 120000));
 
             return timeouts;
-        }
-
-        /* --- Build URL with params (for network persistence) --- */
-        function buildUrlWithNetwork(net) {
-            const url = new URL(window.location.href);
-            url.searchParams.set('net', net);
-            return url.toString();
         }
 
         /* --- Progress bar --- */
@@ -486,37 +471,52 @@
             dot3.className = 'progress-dot ' + (step >= 3 ? (step > 3 ? 'done' : 'active') : '');
         }
 
-        /* --- Network label helper --- */
-        function netDisplayName(net) {
-            return net === 'solana' ? 'Solana' : 'EVM';
-        }
-
         /* --- Step transitions --- */
         function selectNetwork(net) {
+            // If already connected to a wallet, don't allow switching
+            if (connectedAddress) return;
+
+            // If same network clicked again, ignore
+            if (selectedNetwork === net) return;
+
+            // If switching networks, disconnect old provider session
+            if (provider) {
+                try {
+                    if (provider.connected()) provider.disconnect();
+                } catch (e) {}
+                provider = null;
+            }
+
+            // Reset step 2 state when switching
+            hideError('err-connect');
+            document.getElementById('timeout-connect').style.display = 'none';
+            clearTimeoutList(connectTimeouts);
+            document.getElementById('btn-connect').style.display = '';
+            setLoading('btn-connect', false, 'Connect OKX Wallet');
+            isConnecting = false;
+
             selectedNetwork = net;
             sessionStorage.setItem('okx_network', net);
 
-            // Update URL with network param (so it survives OKX app redirect)
+            // Update URL with network param (survives OKX app redirect)
             try {
-                const newUrl = buildUrlWithNetwork(net);
-                window.history.replaceState(null, '', newUrl);
-            } catch (e) { /* ignore if replaceState fails */ }
+                const url = new URL(window.location.href);
+                url.searchParams.set('net', net);
+                window.history.replaceState(null, '', url.toString());
+            } catch (e) {}
 
-            // Highlight selected button
+            // Highlight selected button (buttons stay clickable)
             document.getElementById('btn-evm').classList.toggle('selected', net === 'evm');
             document.getElementById('btn-solana').classList.toggle('selected', net === 'solana');
 
             // Mark step 1 done
             document.getElementById('step1-num').classList.add('done');
             document.getElementById('step1-num').textContent = '\u2713';
-            document.querySelectorAll('.network-btns button').forEach(b => b.disabled = true);
             const netName = netDisplayName(net);
             document.getElementById('step1-detail').textContent = netName;
-            document.getElementById('change-network').style.display = 'inline-block';
 
             // Update step 2 labels
             document.getElementById('net-label-connect').textContent = netName;
-            document.getElementById('btn-connect').textContent = 'Connect OKX Wallet';
             document.getElementById('step2').classList.add('active');
 
             // Progress + scroll
@@ -527,57 +527,21 @@
             initProvider().catch(e => console.error('Provider init failed:', e));
         }
 
-        function resetNetwork() {
-            // Only allow reset if not yet connected
-            if (connectedAddress) return;
-
-            selectedNetwork = null;
-            sessionStorage.removeItem('okx_network');
-
-            // Remove net from URL
-            try {
-                const url = new URL(window.location.href);
-                url.searchParams.delete('net');
-                window.history.replaceState(null, '', url.toString());
-            } catch (e) {}
-
-            // Reset step 1 UI
-            document.getElementById('step1-num').classList.remove('done');
-            document.getElementById('step1-num').textContent = '1';
-            document.getElementById('step1-detail').textContent = '';
-            document.getElementById('change-network').style.display = 'none';
-            document.getElementById('btn-evm').classList.remove('selected');
-            document.getElementById('btn-solana').classList.remove('selected');
-            document.querySelectorAll('.network-btns button').forEach(b => b.disabled = false);
-            document.getElementById('step1').classList.remove('completed');
-
-            // Hide step 2
-            document.getElementById('step2').classList.remove('active');
-            hideError('err-connect');
-            document.getElementById('timeout-connect').style.display = 'none';
-            setLoading('btn-connect', false, 'Connect OKX Wallet');
-
-            // Disconnect provider if needed
-            if (provider && provider.connected()) {
-                try { provider.disconnect(); } catch(e) {}
-            }
-            provider = null;
-
-            setProgress(1);
-            scrollToStep('step1');
-        }
-
         function completeStep(stepNum) {
             document.getElementById('step' + stepNum).classList.add('completed');
         }
 
         function showStep3(address) {
             connectedAddress = address;
+            isConnecting = false;
             document.getElementById('step2-num').classList.add('done');
             document.getElementById('step2-num').textContent = '\u2713';
             document.getElementById('btn-connect').style.display = 'none';
             document.getElementById('timeout-connect').style.display = 'none';
             clearTimeoutList(connectTimeouts);
+
+            // Lock network buttons now that wallet is connected
+            document.querySelectorAll('.network-btns button').forEach(b => b.disabled = true);
 
             // Grey out completed steps
             completeStep(1);
@@ -619,8 +583,10 @@
                             return;
                         }
                     }
+                    // Connected but wrong namespace — disconnect to start fresh
+                    try { provider.disconnect(); } catch (e) {}
                 } catch (e) {
-                    // Session invalid, will need fresh connect
+                    try { provider.disconnect(); } catch (e2) {}
                 }
             }
         }
@@ -632,19 +598,28 @@
 
         /* --- Step 2: Connect Wallet --- */
         async function connectWallet() {
+            if (isConnecting) return; // prevent double-click
+            isConnecting = true;
+
             hideError('err-connect');
             document.getElementById('timeout-connect').style.display = 'none';
             setLoading('btn-connect', true, 'Opening OKX app...');
 
-            // Progressive timeout
             connectTimeouts = startProgressiveTimeout(
                 'timeout-connect', 'err-connect', 'btn-connect', 'Connect OKX Wallet'
             );
 
             try {
+                // Ensure clean provider state
+                if (provider && provider.connected()) {
+                    try { provider.disconnect(); } catch (e) {}
+                    provider = null;
+                }
                 if (!provider) {
                     await initProvider();
                 }
+                // If initProvider already found a restored session, we're done
+                if (connectedAddress) return;
 
                 let session;
                 if (selectedNetwork === 'solana') {
@@ -673,15 +648,24 @@
                 }
 
             } catch (e) {
+                isConnecting = false;
                 clearTimeoutList(connectTimeouts);
                 document.getElementById('timeout-connect').style.display = 'none';
                 const msg = e.message || String(e);
-                if (msg.includes('reject') || msg.includes('cancel')) {
+                console.error('Connect error:', msg, e);
+                if (msg.includes('reject') || msg.includes('cancel') || msg.includes('declined')) {
                     showError('err-connect', 'Connection cancelled. Tap the button to try again.');
                 } else if (msg.includes('not installed') || msg.includes('not found')) {
                     showError('err-connect', 'OKX Wallet app not found. Please install it and try again.');
+                } else if (msg.includes('already connected') || msg.includes('session')) {
+                    // Stale session — disconnect and retry once
+                    try {
+                        if (provider) provider.disconnect();
+                        provider = null;
+                    } catch (e2) {}
+                    showError('err-connect', 'Session conflict. Please tap Connect again.');
                 } else {
-                    showError('err-connect', 'Could not connect to OKX Wallet. Please try again.');
+                    showError('err-connect', 'Could not connect to OKX Wallet: ' + msg);
                 }
                 setLoading('btn-connect', false, 'Connect OKX Wallet');
             }
@@ -693,7 +677,6 @@
             document.getElementById('timeout-sign').style.display = 'none';
             setLoading('btn-sign', true, 'Waiting for signature...');
 
-            // Progressive timeout
             signTimeouts = startProgressiveTimeout(
                 'timeout-sign', 'err-sign', 'btn-sign', 'Sign Verification Message'
             );
@@ -718,7 +701,6 @@
                         { method: "solana_signMessage", params: { message: msgBase64 } },
                         SOLANA_CHAIN
                     );
-                    // OKX may return: string, {signature: str}, or Uint8Array
                     if (result instanceof Uint8Array || (result && result.constructor === Uint8Array)) {
                         signature = btoa(String.fromCharCode(...result));
                     } else if (typeof result === 'object' && result !== null) {
@@ -742,7 +724,6 @@
                 clearTimeoutList(signTimeouts);
                 document.getElementById('timeout-sign').style.display = 'none';
 
-                // Show success UI before sendData (sendData closes the WebApp)
                 document.getElementById('step3-num').classList.add('done');
                 document.getElementById('step3-num').textContent = '\u2713';
                 document.getElementById('btn-sign').style.display = 'none';
@@ -750,7 +731,6 @@
                 document.getElementById('step4').classList.add('active');
                 setProgress(4);
 
-                // Send to bot — this closes the WebApp
                 tg.sendData(JSON.stringify({
                     address: connectedAddress,
                     challenge: challenge,
@@ -758,7 +738,6 @@
                     chain: selectedNetwork
                 }));
 
-                // Safety fallback if sendData doesn't close
                 setTimeout(() => tg.close(), 3000);
 
             } catch (e) {
