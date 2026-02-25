@@ -465,6 +465,25 @@
             return net === 'solana' ? 'Solana' : 'EVM';
         }
 
+        /* --- Clear stale OKXConnect / WalletConnect sessions from localStorage --- */
+        function clearOKXSessions() {
+            try {
+                const toRemove = [];
+                for (let i = 0; i < localStorage.length; i++) {
+                    const key = localStorage.key(i);
+                    if (key && (key.startsWith('wc@') || key.startsWith('wc:') ||
+                        key.toLowerCase().includes('okx') ||
+                        key.toLowerCase().includes('walletconnect'))) {
+                        toRemove.push(key);
+                    }
+                }
+                toRemove.forEach(k => localStorage.removeItem(k));
+                dbg('cleared ' + toRemove.length + ' cached session keys');
+            } catch (e) {
+                dbg('clearOKXSessions error: ' + e.message);
+            }
+        }
+
         /* --- Progressive timeout --- */
         function clearTimeoutList(list) {
             list.forEach(t => clearTimeout(t));
@@ -518,13 +537,15 @@
             // If same network clicked again, ignore
             if (selectedNetwork === net) return;
 
-            // If switching networks, disconnect old provider session
+            // If switching networks, disconnect old provider session + clear cached data
             if (provider) {
                 try {
-                    if (provider.connected()) provider.disconnect();
+                    if (provider.connected()) await provider.disconnect();
                 } catch (e) {}
                 provider = null;
+                solanaProvider = null;
             }
+            clearOKXSessions();
 
             // Reset step 2 state when switching
             hideError('err-connect');
@@ -656,7 +677,8 @@
                 }
                 // Not restoring, or wrong namespace — disconnect stale session
                 dbg('disconnecting stale session');
-                try { provider.disconnect(); } catch (e) {}
+                try { await provider.disconnect(); } catch (e) {}
+                clearOKXSessions();
             }
         }
 
@@ -701,8 +723,10 @@
                 } else if (provider.connected()) {
                     // Stale session — clean up
                     dbg('stale session detected, reconnecting');
-                    try { provider.disconnect(); } catch (e) {}
+                    try { await provider.disconnect(); } catch (e) {}
                     provider = null;
+                    solanaProvider = null;
+                    clearOKXSessions();
                     await initProvider(false);
                 }
 
@@ -713,12 +737,16 @@
                     session = await provider.connect({
                         namespaces: {
                             solana: {
-                                chains: [SOLANA_CHAIN]
+                                chains: [SOLANA_CHAIN],
+                                methods: ["solana_signMessage", "solana_signTransaction"],
+                                events: []
                             }
                         },
                         optionalNamespaces: {
                             solana: {
-                                chains: [SOLANA_CHAIN]
+                                chains: [SOLANA_CHAIN],
+                                methods: ["solana_signMessage", "solana_signTransaction"],
+                                events: []
                             }
                         },
                         sessionConfig: { redirect: "tg://resolve" }
@@ -805,7 +833,7 @@
                     // Use provider.request() — same deep link mechanism as EVM personal_sign
                     const msgBase64 = textToBase64(challenge);
                     const result = await provider.request(
-                        { method: "solana_signMessage", params: { message: msgBase64 } },
+                        { method: "solana_signMessage", params: { message: msgBase64, pubkey: connectedAddress } },
                         SOLANA_CHAIN
                     );
                     dbg('solana sign result type: ' + typeof result + ', keys: ' + (result && typeof result === 'object' ? Object.keys(result).join(',') : 'n/a'));
