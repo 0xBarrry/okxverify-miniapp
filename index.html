@@ -5,6 +5,42 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Barry OKX Verify</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <script>
+    // OKX Connect SDK in TMA mode opens @OKX_WALLET_BOT via openTelegramLink.
+    // Opening another mini app can close ours and break the relay WebSocket.
+    // Fix: decode startapp → topic, open OKX mobile wallet via openLink instead.
+    (function() {
+        function patchOKXTelegramLink() {
+            if (!window.Telegram || !window.Telegram.WebApp || !window.Telegram.WebApp.openTelegramLink) return;
+            var _orig = window.Telegram.WebApp.openTelegramLink.bind(window.Telegram.WebApp);
+            window.Telegram.WebApp.openTelegramLink = function(url) {
+                if (typeof url === 'string' && url.indexOf('OKX_WALLET_BOT') !== -1) {
+                    try {
+                        var startapp = (url.match(/[?&]startapp=([^&]*)/) || [])[1] || '';
+                        // startapp = URL-safe base64 of JSON.stringify({okxconnect, redirect, extraparams, fromtg})
+                        // okxconnect = standard base64 of JSON.stringify({topic, clientId})
+                        var b64 = startapp.replace(/-/g, '+').replace(/_/g, '/');
+                        var pad = (4 - b64.length % 4) % 4;
+                        b64 += '==='.slice(0, pad);
+                        var outer = JSON.parse(atob(b64));
+                        var inner = JSON.parse(atob(outer.okxconnect));
+                        var topic = inner.topic;
+                        var mobileUrl = 'https://web3.okx.com/ul/connect?topic=' + encodeURIComponent(topic);
+                        console.log('[OKX Patch] Intercepted OKX_WALLET_BOT, opening mobile wallet:', mobileUrl);
+                        window.Telegram.WebApp.openLink(mobileUrl, { try_instant_view: false });
+                    } catch (e) {
+                        console.error('[OKX Patch] Decode failed, falling back:', e.message);
+                        _orig(url);
+                    }
+                } else {
+                    _orig(url);
+                }
+            };
+            console.log('[OKX Patch] openTelegramLink patched for OKX mobile fallback');
+        }
+        patchOKXTelegramLink();
+    })();
+    </script>
     <script src="https://cdn.jsdelivr.net/npm/@okxconnect/universal-provider@1.9.1/dist/okxconnect_universal.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@okxconnect/solana-provider@1.9.1/dist/okxconnect_solana.min.js"></script>
     <style>
@@ -947,3 +983,4 @@
     </script>
 </body>
 </html>
+
