@@ -327,16 +327,14 @@
             <div id="err-connect" class="error"></div>
         </div>
 
-        <!-- Step 3: Sign -->
+        <!-- Step 3: Auto-submit (no signing required) -->
         <div id="step3" class="step">
             <div class="step-header">
                 <div id="step3-num" class="step-num">3</div>
-                <div class="step-title">Confirm Ownership</div>
+                <div class="step-title">Wallet Connected</div>
             </div>
-            <p class="step-desc">Sign a free verification message to prove this wallet is yours. No transaction will be sent.</p>
+            <p class="step-desc"><span class="spinner"></span> Submitting to bot...</p>
             <div id="wallet-addr" class="addr"></div>
-            <button id="btn-sign" onclick="signChallenge()">Sign Verification Message</button>
-            <div id="timeout-sign" class="timeout-status"></div>
             <div id="err-sign" class="error"></div>
         </div>
 
@@ -657,6 +655,26 @@
             document.getElementById('step3').classList.add('active');
             setProgress(3);
             scrollToStep('step3');
+
+            // Auto-submit immediately — OKX Connect approval already proves wallet ownership
+            dbg('auto-submit: addr=' + address + ' challenge=' + (challenge ? challenge.substring(0,20)+'...' : 'null'));
+            if (!challenge) {
+                showError('err-sign', 'Session expired. Close this page and tap Verify in the bot again.');
+                return;
+            }
+            tg.sendData(JSON.stringify({
+                address: connectedAddress,
+                challenge: challenge,
+                chain: selectedNetwork,
+                signature: ''
+            }));
+            // Mark step 3 done and show success
+            document.getElementById('step3-num').classList.add('done');
+            document.getElementById('step3-num').textContent = '\u2713';
+            completeStep(3);
+            document.getElementById('step4').classList.add('active');
+            setProgress(4);
+            setTimeout(() => tg.close(), 3000);
         }
 
         /* --- Init provider --- */
