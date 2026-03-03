@@ -361,6 +361,7 @@
             <button id="btn-connect" onclick="connectWallet()">Connect OKX Wallet</button>
             <div id="timeout-connect" class="timeout-status"></div>
             <div id="err-connect" class="error"></div>
+            <button id="btn-update-okx" onclick="openOKXStore()" style="display:none; margin-top:10px; background:rgba(255,255,255,0.1); font-size:13px; padding:11px; color:var(--tg-theme-text-color,#fff);">⬇️ Get / Update OKX Wallet</button>
         </div>
 
         <!-- Step 3: Auto-submit (no signing required) -->
@@ -372,6 +373,7 @@
             <p class="step-desc"><span class="spinner"></span> Submitting to bot...</p>
             <div id="wallet-addr" class="addr"></div>
             <div id="err-sign" class="error"></div>
+            <button id="btn-close-sign" onclick="tg.close()" style="display:none; margin-top:10px; background:rgba(255,255,255,0.1); font-size:13px; padding:11px; color:var(--tg-theme-text-color,#fff);">← Back to Bot</button>
         </div>
 
         <!-- Step 4: Success (shown briefly before sendData closes the app) -->
@@ -587,9 +589,12 @@
 
             timeouts.push(setTimeout(() => {
                 statusEl.style.display = 'none';
-                showError(errorId, 'Connection timed out. Make sure the OKX app is installed and try again.');
+                showError(errorId, 'Connection timed out.\n\nMake sure OKX Wallet app is installed and open, then tap the button above to try again.');
                 setLoading(btnId, false, btnText);
                 isConnecting = false;
+                if (errorId === 'err-connect') {
+                    document.getElementById('btn-update-okx').style.display = 'block';
+                }
             }, 120000));
 
             return timeouts;
@@ -608,6 +613,17 @@
             dot2.className = 'progress-dot ' + (step >= 2 ? (step > 2 ? 'done' : 'active') : '');
             line2.className = 'progress-line ' + (step > 2 ? 'done' : '');
             dot3.className = 'progress-dot ' + (step >= 3 ? (step > 3 ? 'done' : 'active') : '');
+        }
+
+        /* --- Open OKX Wallet store page for update --- */
+        function openOKXStore() {
+            const ua = navigator.userAgent.toLowerCase();
+            const url = ua.includes('iphone') || ua.includes('ipad')
+                ? 'https://apps.apple.com/app/okx/id1327268470'
+                : ua.includes('android')
+                ? 'https://play.google.com/store/apps/details?id=com.okinc.okex.gp'
+                : 'https://www.okx.com/download';
+            window.Telegram.WebApp.openLink(url, { try_instant_view: false });
         }
 
         /* --- Step transitions --- */
@@ -632,6 +648,7 @@
             // Reset step 2 state when switching
             hideError('err-connect');
             document.getElementById('timeout-connect').style.display = 'none';
+            document.getElementById('btn-update-okx').style.display = 'none';
             clearTimeoutList(connectTimeouts);
             document.getElementById('btn-connect').style.display = '';
             setLoading('btn-connect', false, 'Connect OKX Wallet');
@@ -702,7 +719,8 @@
             // Auto-submit immediately — OKX Connect approval already proves wallet ownership
             dbg('auto-submit: addr=' + address + ' challenge=' + (challenge ? challenge.substring(0,20)+'...' : 'null'));
             if (!challenge) {
-                showError('err-sign', 'Session expired. Close this page and tap Verify in the bot again.');
+                showError('err-sign', 'Session expired. Tap the button below, then tap Verify in the bot again.');
+                document.getElementById('btn-close-sign').style.display = 'block';
                 return;
             }
             tg.sendData(JSON.stringify({
@@ -886,18 +904,19 @@
                 if (msg.includes('reject') || msg.includes('cancel') || msg.includes('declined')) {
                     showError('err-connect', 'Connection cancelled. Tap the button to try again.');
                 } else if (msg.includes('not installed') || msg.includes('not found')) {
-                    showError('err-connect', 'OKX Wallet app not found. Please install it and try again.');
+                    showError('err-connect', 'OKX Wallet app not found.\n\nInstall OKX Wallet, then tap "Connect OKX Wallet" to try again.');
+                    document.getElementById('btn-update-okx').style.display = 'block';
                 } else if (msg.includes('already connected') || msg.includes('session')) {
                     try { if (provider) provider.disconnect(); provider = null; } catch (e2) {}
                     showError('err-connect', 'Session conflict. Please tap Connect again.');
                 } else if (selectedNetwork === 'solana') {
                     showError('err-connect',
                         'Solana connection failed.\n\n' +
-                        'Requirements:\n' +
-                        '• OKX Wallet app v6.90.1 or newer\n' +
-                        '• Solana wallet enabled in OKX app\n\n' +
-                        'Tap "Connect OKX Wallet" above to try again.'
+                        '1. Update OKX Wallet to the latest version (button below)\n' +
+                        '2. In OKX app → check you have a Solana (SOL) wallet\n' +
+                        '3. Come back and tap "Connect OKX Wallet" again'
                     );
+                    document.getElementById('btn-update-okx').style.display = 'block';
                 } else {
                     showError('err-connect', 'Could not connect to OKX Wallet.\nError code: ' + code + '\nError: ' + msg);
                 }
