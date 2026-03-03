@@ -892,10 +892,11 @@
                     showError('err-connect', 'Session conflict. Please tap Connect again.');
                 } else if (selectedNetwork === 'solana') {
                     showError('err-connect',
-                        'Solana connection failed.\n' +
-                        'Error code: ' + code + '\n' +
-                        'Error: ' + msg + '\n\n' +
-                        'Make sure OKX app is v6.90.1+ and you have a Solana wallet.'
+                        'Solana connection failed.\n\n' +
+                        'Requirements:\n' +
+                        '• OKX Wallet app v6.90.1 or newer\n' +
+                        '• Solana wallet enabled in OKX app\n\n' +
+                        'Tap "Connect OKX Wallet" above to try again.'
                     );
                 } else {
                     showError('err-connect', 'Could not connect to OKX Wallet.\nError code: ' + code + '\nError: ' + msg);
