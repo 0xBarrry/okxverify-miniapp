@@ -41,9 +41,16 @@
         patchOKXTelegramLink();
     })();
 
-    // Android fix: OKX SDK in non-TMA mode navigates window.location.href to okx:// deep link.
-    // Telegram's Android WebView doesn't handle custom URL schemes → ERR_UNKNOWN_URL_SCHEME crash.
-    // Intercept and route through tg.openLink() which uses Android Intent dispatch to open OKX app.
+    /* --- Platform detection (global — used by head + body scripts) --- */
+    var IS_ANDROID = /Android/i.test(navigator.userAgent);
+    var IS_IOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    var PLATFORM = IS_ANDROID ? 'android' : IS_IOS ? 'ios' : 'mobile';
+    console.log('[Platform] Detected:', PLATFORM);
+
+    // Both Android and iOS: OKX SDK may navigate window.location.href to okx:// deep link.
+    // Android: Telegram WebView throws ERR_UNKNOWN_URL_SCHEME — must intercept.
+    // iOS: WKWebView may also fail for custom schemes — same fix applies.
+    // Intercept and route through tg.openLink() which uses OS-level Intent/URL dispatch.
     (function patchCustomSchemeNavigation() {
         function handleCustomUrl(url) {
             if (!url || typeof url !== 'string') return false;
@@ -82,7 +89,7 @@
             return _origOpen ? _origOpen.apply(window, arguments) : null;
         };
 
-        console.log('[SchemeInterceptor] Custom URL scheme interceptor active');
+        console.log('[SchemeInterceptor] Active, platform=' + PLATFORM);
     })();
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@okxconnect/universal-provider@1.9.1/dist/okxconnect_universal.min.js"></script>
@@ -446,7 +453,8 @@
         // its own reference internally, so tg.sendData() / tg.close() are unaffected.
         try { delete window.TelegramWebviewProxy; } catch (_) {}
 
-        /* --- Desktop detection --- */
+        /* --- Desktop + platform detection --- */
+        // IS_ANDROID / IS_IOS / PLATFORM declared in head <script> (global scope)
         function isMobile() {
             return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
                 || (navigator.maxTouchPoints && navigator.maxTouchPoints > 2);
@@ -457,6 +465,8 @@
             document.getElementById('main-content').style.display = 'none';
             throw new Error('Desktop detected — halting Mini App');
         }
+
+        dbg && dbg('platform=' + PLATFORM + ' ua=' + navigator.userAgent.substring(0, 80));
 
         let provider = null;
         let solanaProvider = null; // OKXSolanaProvider wrapper
@@ -954,15 +964,19 @@
                     try { if (provider) provider.disconnect(); provider = null; } catch (e2) {}
                     showError('err-connect', 'Session conflict. Please tap Connect again.');
                 } else if (selectedNetwork === 'solana') {
-                    showError('err-connect',
-                        'Solana connection failed.\n\n' +
-                        '1. Update OKX Wallet to the latest version (button below)\n' +
-                        '2. In OKX app → check you have a Solana (SOL) wallet\n' +
-                        '3. Come back and tap "Connect OKX Wallet" again'
-                    );
+                    const solSteps = IS_ANDROID
+                        ? '1. Update OKX Wallet on Google Play (button below)\n2. In OKX app → make sure you have a Solana (SOL) wallet\n3. Come back and tap "Connect OKX Wallet" again'
+                        : '1. Update OKX Wallet on App Store (button below)\n2. In OKX app → make sure you have a Solana (SOL) wallet\n3. Come back and tap "Connect OKX Wallet" again';
+                    showError('err-connect', 'Solana connection failed.\n\n' + solSteps);
                     document.getElementById('btn-update-okx').style.display = 'block';
                 } else {
-                    showError('err-connect', 'Could not connect to OKX Wallet.\nError code: ' + code + '\nError: ' + msg);
+                    const platformHint = IS_ANDROID
+                        ? '\n\nMake sure OKX Wallet is installed on your Android and try again.'
+                        : IS_IOS
+                        ? '\n\nMake sure OKX Wallet is installed on your iPhone and try again.'
+                        : '';
+                    showError('err-connect', 'Could not connect to OKX Wallet.\nError code: ' + code + '\nError: ' + msg + platformHint);
+                    document.getElementById('btn-update-okx').style.display = 'block';
                 }
                 setLoading('btn-connect', false, 'Connect OKX Wallet');
             }
