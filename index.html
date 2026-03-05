@@ -74,8 +74,8 @@
 
     // Non-TMA mode: OKX SDK navigates to okx:// deep link which crashes Android WebView.
     // Intercept every navigation to a custom scheme and route through tg.openLink() instead.
-    // For okx:// we extract the full WalletConnect URI (wc:...) and build the OKX universal link
-    // https://web3.okx.com/ul/v1/wc?uri=... so OKX app receives the pairing info correctly.
+    // tg.openLink() goes through Telegram NATIVE code (not WebView) → Android Intent.ACTION_VIEW
+    // → OKX app opens directly. No ERR_UNKNOWN_URL_SCHEME because WebView never sees okx://.
     (function patchCustomSchemeNavigation() {
         function handleCustomUrl(url) {
             if (!url || typeof url !== 'string') return false;
@@ -86,26 +86,12 @@
             if (window._dbg) window._dbg('scheme=' + scheme + ' ' + url.substring(0, 80));
             try {
                 var openUrl;
-                if (scheme === 'okx:') {
-                    var u = new URL(url);
-                    // okx://main/walletconnect/dcuri?uri=wc%3A...&redirect=tg%3A%2F%2Fresolve
-                    var wcUri    = u.searchParams.get('uri');
-                    var redirect = u.searchParams.get('redirect');
-                    if (wcUri) {
-                        // Full WC pairing URI present — build proper OKX universal link
-                        openUrl = 'https://web3.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUri);
-                        if (redirect) openUrl += '&redirectUrl=' + encodeURIComponent(redirect);
-                        console.log('[SchemeInterceptor] WC URI extracted, openUrl:', openUrl.substring(0, 100));
-                        if (window._dbg) window._dbg('wcUri found, openUrl=' + openUrl.substring(0, 80));
-                    } else {
-                        // Fallback: map okx:// path to web3.okx.com
-                        openUrl = 'https://web3.okx.com' + u.pathname + u.search + u.hash;
-                        console.log('[SchemeInterceptor] No wcUri, fallback:', openUrl.substring(0, 100));
-                        if (window._dbg) window._dbg('no wcUri, fallback=' + openUrl.substring(0, 80));
-                    }
-                } else {
-                    openUrl = url; // other custom schemes: pass as-is to tg.openLink
-                }
+                // Pass any custom scheme directly to tg.openLink().
+                // On Android, Telegram native handles okx:// via Intent.ACTION_VIEW → OKX app opens.
+                // okx:// URL from SDK already has full WC URI + redirect params — no conversion needed.
+                openUrl = url;
+                console.log('[SchemeInterceptor] → tg.openLink:', scheme, url.substring(0, 100));
+                if (window._dbg) window._dbg('tg.openLink: ' + url.substring(0, 80));
                 window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
             } catch (e) {
                 console.error('[SchemeInterceptor] openLink failed:', e.message);
