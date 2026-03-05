@@ -53,16 +53,20 @@
                             if (window._dbg) window._dbg('[OKX] constructed wcUri from topic+symKey');
                         }
 
+                        // OKX official universal link format:
+                        // https://www.okx.com/download?deep_link=okx%3A%2F%2Ful%2Fv1%2Fwc%3Furi%3D{encoded_wc_uri}
+                        // This is the ONLY format guaranteed to open OKX app AND show connection prompt.
+                        // www.okx.com/download is registered as App Link on Android (always opens OKX app).
+                        // Inner deep_link is okx:// scheme that OKX processes internally.
+                        var wcUriForLink = wcUri || (topic.indexOf('wc:') === 0 ? topic : null);
                         var mobileUrl;
-                        if (wcUri) {
-                            // Explicit WC URI (or constructed) — use OKX universal link v1
-                            mobileUrl = 'https://web3.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUri);
-                        } else if (topic.indexOf('wc:') === 0) {
-                            // topic IS the full WC URI
-                            mobileUrl = 'https://web3.okx.com/ul/v1/wc?uri=' + encodeURIComponent(topic);
+                        if (wcUriForLink) {
+                            var deepLink = 'okx://ul/v1/wc?uri=' + encodeURIComponent(wcUriForLink);
+                            mobileUrl = 'https://www.okx.com/download?deep_link=' + encodeURIComponent(deepLink);
                         } else {
-                            // topic is a bare hash, no symKey — fallback to connect endpoint
-                            mobileUrl = 'https://web3.okx.com/ul/connect?topic=' + encodeURIComponent(topic);
+                            // bare topic only — best effort
+                            var deepLinkFallback = 'okx://ul/connect?topic=' + encodeURIComponent(topic);
+                            mobileUrl = 'https://www.okx.com/download?deep_link=' + encodeURIComponent(deepLinkFallback);
                         }
 
                         console.log('[OKX Patch] mobileUrl:', mobileUrl);
@@ -954,6 +958,8 @@
                 clearOKXSessions();
                 await initProvider(false);
                 dbg('calling provider.connect() for ' + selectedNetwork);
+                // Start continuous relay poller — fires every 2s regardless of visibilitychange
+                startRelayPoller();
 
                 let session;
                 if (selectedNetwork === 'solana') {
@@ -997,6 +1003,7 @@
 
             } catch (e) {
                 isConnecting = false;
+                if (window._relayPoller) { clearInterval(window._relayPoller); window._relayPoller = null; }
                 clearTimeoutList(connectTimeouts);
                 document.getElementById('timeout-connect').style.display = 'none';
                 const msg = e.message || String(e);
@@ -1025,40 +1032,48 @@
             }
         }
 
-        /* --- Visibility change handler: speed up relay reconnection on Android ---
-         * When user returns from OKX app to Telegram, the WebView resumes.
-         * Poll provider.connected() every 500ms for up to 10s — as soon as the
-         * WalletConnect relay delivers the session we get it without waiting 30s. */
-        document.addEventListener('visibilitychange', async function onVisibility() {
-            if (document.visibilityState !== 'visible') return;
-            if (!isConnecting || connectedAddress) return;
-            dbg('visibility→visible, polling for session...');
-            for (var i = 0; i < 60; i++) {   // 60 × 500ms = 30s
-                await new Promise(function(r) { setTimeout(r, 500); });
-                if (!isConnecting || connectedAddress) return; // already handled
+        /* --- Relay poller: setInterval every 2s (replaces visibilitychange) ---
+         * Android embedded WebView often does NOT fire visibilitychange when returning
+         * from OKX app. Use a continuous setInterval instead — started in connectWallet()
+         * and stored in window._relayPoller so it can be cleared from anywhere. */
+        window._relayPoller = null;
+        function startRelayPoller() {
+            if (window._relayPoller) clearInterval(window._relayPoller);
+            var pollCount = 0;
+            window._relayPoller = setInterval(function() {
+                if (!isConnecting || connectedAddress) {
+                    clearInterval(window._relayPoller); window._relayPoller = null; return;
+                }
+                pollCount++;
+                dbg('relay poll #' + pollCount + ' connected=' + (provider ? provider.connected() : 'no provider'));
                 try {
                     if (provider && provider.connected()) {
                         var session = provider.session;
-                        if (!session || !session.namespaces) continue;
-                        dbg('session found on visibility poll #' + i);
+                        if (!session || !session.namespaces) return;
+                        dbg('relay poll ✓ session found at poll #' + pollCount);
+                        clearInterval(window._relayPoller); window._relayPoller = null;
                         clearTimeoutList(connectTimeouts);
                         if (selectedNetwork === 'solana') {
                             var solNs = session.namespaces.solana || session.namespaces[SOLANA_CHAIN];
                             if (solNs && solNs.accounts && solNs.accounts.length > 0) {
                                 showStep3(solNs.accounts[0].split(':').pop());
-                                return;
                             }
                         } else if (session.namespaces.eip155) {
                             var evmAccounts = session.namespaces.eip155.accounts;
                             if (evmAccounts && evmAccounts.length > 0) {
                                 showStep3(evmAccounts[0].split(':')[2]);
-                                return;
                             }
                         }
                     }
-                } catch (e) { dbg('poll error: ' + e.message); }
-            }
-            dbg('poll ended, still waiting for relay...');
+                } catch (e) { dbg('relay poll err: ' + e.message); }
+            }, 2000);
+        }
+        // Also keep visibilitychange as secondary trigger (fires on some Android versions)
+        document.addEventListener('visibilitychange', function() {
+            if (document.visibilityState !== 'visible') return;
+            if (!isConnecting || connectedAddress) return;
+            dbg('visibilitychange fired → ensuring poller running');
+            startRelayPoller();
         });
 
         /* --- Step 3: Sign Challenge --- */
