@@ -6,6 +6,11 @@
     <title>Barry OKX Verify</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script>
+    // Platform detection — declared in <head> so all scripts (interceptors + main) can use it
+    var IS_ANDROID = /Android/i.test(navigator.userAgent);
+    var IS_IOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    var PLATFORM = IS_ANDROID ? 'android' : IS_IOS ? 'ios' : 'mobile';
+
     // OKX Connect SDK in TMA mode opens @OKX_WALLET_BOT via openTelegramLink.
     // Opening another mini app can close ours and break the relay WebSocket.
     // Fix: decode startapp → topic, open OKX mobile wallet via openLink instead.
@@ -39,6 +44,50 @@
             console.log('[OKX Patch] openTelegramLink patched for OKX mobile fallback');
         }
         patchOKXTelegramLink();
+    })();
+
+    // Android fix: OKX SDK in non-TMA mode navigates window.location.href to okx:// deep link.
+    // Telegram's Android WebView doesn't handle custom URL schemes → ERR_UNKNOWN_URL_SCHEME crash.
+    // Intercept and route through tg.openLink() which uses Android Intent dispatch to open OKX app.
+    (function patchCustomSchemeNavigation() {
+        function handleCustomUrl(url) {
+            if (!url || typeof url !== 'string') return false;
+            var scheme;
+            try { scheme = new URL(url).protocol; } catch (e) { return false; }
+            if (scheme === 'http:' || scheme === 'https:' || scheme === 'javascript:' || scheme === 'tg:') return false;
+            console.log('[SchemeInterceptor] Custom scheme caught:', scheme, url.substring(0, 100));
+            try {
+                var openUrl = url;
+                if (scheme === 'okx:') {
+                    // Convert okx:// to HTTPS universal link (more compatible)
+                    var u = new URL(url);
+                    openUrl = 'https://web3.okx.com' + u.pathname + u.search + u.hash;
+                }
+                window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
+            } catch (e) {
+                console.error('[SchemeInterceptor] openLink failed:', e.message);
+            }
+            return true;
+        }
+
+        // Intercept Location.prototype.href setter (covers window.location.href = 'okx://...')
+        var locDesc = Object.getOwnPropertyDescriptor(Location.prototype, 'href');
+        if (locDesc && locDesc.set) {
+            Object.defineProperty(Location.prototype, 'href', {
+                get: locDesc.get,
+                set: function(url) { if (!handleCustomUrl(url)) locDesc.set.call(this, url); },
+                configurable: true
+            });
+        }
+
+        // Intercept window.open (covers window.open('okx://...'))
+        var _origOpen = window.open;
+        window.open = function(url, target, features) {
+            if (handleCustomUrl(url)) return { focus: function(){}, close: function(){} };
+            return _origOpen ? _origOpen.apply(window, arguments) : null;
+        };
+
+        console.log('[SchemeInterceptor] Custom URL scheme interceptor active');
     })();
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@okxconnect/universal-provider@1.9.1/dist/okxconnect_universal.min.js"></script>
