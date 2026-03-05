@@ -808,7 +808,15 @@
             setProgress(2);
             scrollToStep('step2');
 
-            // Provider init moved to connectWallet() — double init caused issues on some Android devices
+            // Pre-init provider on iOS only — iOS non-TMA mode needs provider ready before connect.
+            // Android skips pre-init: double OKXProvider.init() caused silent failures on some devices.
+            if (!IS_ANDROID) {
+                try {
+                    await initProvider(false);
+                } catch (e) {
+                    dbg('pre-init failed (non-critical): ' + e.message);
+                }
+            }
         }
 
         function completeStep(stepNum) {
