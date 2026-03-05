@@ -832,6 +832,8 @@
                     await initProvider(false);
                 }
 
+                // Always clear stale WC sessions before connecting (handles incomplete previous attempts)
+                clearOKXSessions();
                 dbg('calling provider.connect() for ' + selectedNetwork);
 
                 let session;
