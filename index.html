@@ -170,7 +170,51 @@
             if (a && handleCustomUrl(a.href)) { e.preventDefault(); e.stopPropagation(); }
         }, true);
 
-        console.log('[SchemeInterceptor] Custom URL scheme interceptor active');
+        // Intercept hidden-iframe deep links — the #1 technique WalletConnect/OKX SDKs
+        // use on mobile: document.createElement('iframe') → iframe.src = 'okx://...'
+        // This bypasses location.href, window.open, and <a> click interceptors entirely.
+        var iframeSrcDesc = Object.getOwnPropertyDescriptor(HTMLIFrameElement.prototype, 'src');
+        if (iframeSrcDesc && iframeSrcDesc.set) {
+            Object.defineProperty(HTMLIFrameElement.prototype, 'src', {
+                get: iframeSrcDesc.get,
+                set: function(url) {
+                    if (handleCustomUrl(url)) return;
+                    iframeSrcDesc.set.call(this, url);
+                },
+                configurable: true
+            });
+        }
+
+        // Also intercept iframe.setAttribute('src', 'okx://...')
+        var _origSetAttribute = Element.prototype.setAttribute;
+        Element.prototype.setAttribute = function(name, value) {
+            if (this instanceof HTMLIFrameElement && name.toLowerCase() === 'src' && handleCustomUrl(value)) return;
+            return _origSetAttribute.call(this, name, value);
+        };
+
+        // MutationObserver as last resort — catch iframes added via innerHTML
+        // with src already set in the HTML string (neither setter nor setAttribute fires)
+        var _iframeObserver = new MutationObserver(function(mutations) {
+            for (var i = 0; i < mutations.length; i++) {
+                var nodes = mutations[i].addedNodes;
+                for (var j = 0; j < nodes.length; j++) {
+                    var node = nodes[j];
+                    if (node.tagName === 'IFRAME' && node.src) {
+                        handleCustomUrl(node.src);
+                    }
+                    // Also check children (e.g. div with iframe inside)
+                    if (node.querySelectorAll) {
+                        var iframes = node.querySelectorAll('iframe[src]');
+                        for (var k = 0; k < iframes.length; k++) {
+                            handleCustomUrl(iframes[k].src);
+                        }
+                    }
+                }
+            }
+        });
+        _iframeObserver.observe(document.documentElement, { childList: true, subtree: true });
+
+        console.log('[SchemeInterceptor] Custom URL scheme interceptor active (incl. iframe)');
     })();
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@okxconnect/universal-provider@1.9.1/dist/okxconnect_universal.min.js"></script>
