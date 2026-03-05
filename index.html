@@ -1011,6 +1011,42 @@
             }
         }
 
+        /* --- Visibility change handler: speed up relay reconnection on Android ---
+         * When user returns from OKX app to Telegram, the WebView resumes.
+         * Poll provider.connected() every 500ms for up to 10s — as soon as the
+         * WalletConnect relay delivers the session we get it without waiting 30s. */
+        document.addEventListener('visibilitychange', async function onVisibility() {
+            if (document.visibilityState !== 'visible') return;
+            if (!isConnecting || connectedAddress) return;
+            dbg('visibility→visible, polling for session...');
+            for (var i = 0; i < 20; i++) {   // 20 × 500ms = 10s
+                await new Promise(function(r) { setTimeout(r, 500); });
+                if (!isConnecting || connectedAddress) return; // already handled
+                try {
+                    if (provider && provider.connected()) {
+                        var session = provider.session;
+                        if (!session || !session.namespaces) continue;
+                        dbg('session found on visibility poll #' + i);
+                        clearTimeoutList(connectTimeouts);
+                        if (selectedNetwork === 'solana') {
+                            var solNs = session.namespaces.solana || session.namespaces[SOLANA_CHAIN];
+                            if (solNs && solNs.accounts && solNs.accounts.length > 0) {
+                                showStep3(solNs.accounts[0].split(':').pop());
+                                return;
+                            }
+                        } else if (session.namespaces.eip155) {
+                            var evmAccounts = session.namespaces.eip155.accounts;
+                            if (evmAccounts && evmAccounts.length > 0) {
+                                showStep3(evmAccounts[0].split(':')[2]);
+                                return;
+                            }
+                        }
+                    }
+                } catch (e) { dbg('poll error: ' + e.message); }
+            }
+            dbg('poll ended, still waiting for relay...');
+        });
+
         /* --- Step 3: Sign Challenge --- */
         async function signChallenge() {
             hideError('err-sign');
