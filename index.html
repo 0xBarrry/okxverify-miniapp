@@ -11,9 +11,10 @@
     var IS_IOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
     var PLATFORM = IS_ANDROID ? 'android' : IS_IOS ? 'ios' : 'mobile';
 
-    // OKX Connect SDK in TMA mode opens @OKX_WALLET_BOT via openTelegramLink.
-    // Opening another mini app can close ours and break the relay WebSocket.
-    // Fix: decode startapp → topic, open OKX mobile wallet via openLink instead.
+    // Safety net: if SDK somehow still calls openTelegramLink → OKX_WALLET_BOT
+    // (even though TelegramWebviewProxy is deleted), intercept and redirect
+    // to proper HTTPS deep link via tg.openLink(). This is a backup — primary
+    // path is now patchCustomSchemeNavigation (non-TMA mode, okx:// interceptor).
     (function() {
         function patchOKXTelegramLink() {
             if (!window.Telegram || !window.Telegram.WebApp || !window.Telegram.WebApp.openTelegramLink) return;
@@ -86,10 +87,11 @@
         patchOKXTelegramLink();
     })();
 
-    // Non-TMA mode: OKX SDK navigates to okx:// deep link which crashes Android WebView.
-    // Intercept every navigation to a custom scheme and route through tg.openLink() instead.
-    // tg.openLink() goes through Telegram NATIVE code (not WebView) → Android Intent.ACTION_VIEW
-    // → OKX app opens directly. No ERR_UNKNOWN_URL_SCHEME because WebView never sees okx://.
+    // Both platforms now use non-TMA mode: SDK navigates to okx:// deep link.
+    // Intercept every custom scheme navigation and route through tg.openLink() instead.
+    // tg.openLink() goes through Telegram NATIVE code (not WebView):
+    //   Android: Intent.ACTION_VIEW → OKX app via App Links (www.okx.com/download?deep_link=...)
+    //   iOS: Universal Links (web3.okx.com/ul/v1/wc?uri=...) → OKX app
     (function patchCustomSchemeNavigation() {
         function handleCustomUrl(url) {
             if (!url || typeof url !== 'string') return false;
@@ -100,10 +102,9 @@
             if (window._dbg) window._dbg('scheme=' + scheme + ' ' + url.substring(0, 80));
             try {
                 var openUrl;
-                // tg.openLink() with okx:// ALSO crashes Android WebView (ERR_UNKNOWN_URL_SCHEME).
-                // Solution: extract the WC URI from okx:// and convert to HTTPS universal link.
-                // iOS: tg.openLink(https://web3.okx.com/ul/v1/wc?uri=...) → Universal Links → OKX opens.
-                // Android: this branch won't run in TMA mode (SDK uses openTelegramLink instead).
+                // Extract WC URI from okx:// deep link and convert to platform-specific HTTPS link.
+                // Android: https://www.okx.com/download?deep_link=okx%3A%2F%2F... (App Links, always opens OKX)
+                // iOS: https://web3.okx.com/ul/v1/wc?uri=... (Universal Links)
                 var wcUri = null;
                 try {
                     var parsed = new URL(url);
@@ -113,7 +114,14 @@
                     var m = url.match(/[?&]uri=([^&]+)/);
                     if (m) wcUri = decodeURIComponent(m[1]);
                 }
-                if (wcUri) {
+                if (IS_ANDROID) {
+                    // Android App Links format — wraps okx:// inside https://www.okx.com/download
+                    var deepLink = wcUri
+                        ? 'okx://ul/v1/wc?uri=' + encodeURIComponent(wcUri)
+                        : url; // preserve original okx:// URL
+                    openUrl = 'https://www.okx.com/download?deep_link=' + encodeURIComponent(deepLink);
+                } else if (wcUri) {
+                    // iOS Universal Links format
                     openUrl = 'https://web3.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUri);
                 } else {
                     // Fallback: no WC URI found, best-effort with HTTPS wrapper
@@ -529,16 +537,14 @@
         tg.ready();
         tg.expand();
 
-        // Platform-specific TMA mode:
-        // Android: KEEP TelegramWebviewProxy → TMA mode → SDK calls openTelegramLink(OKX_WALLET_BOT)
-        //          → patchOKXTelegramLink converts to https://web3.okx.com/ul/connect?topic=...
-        //          → tg.openLink(https://...) → Telegram native Intent → OKX app opens via App Links
-        //          → user approves → returns to miniapp → visibilitychange poller reconnects relay
-        // iOS: DELETE proxy → non-TMA → SDK navigates okx:// → patchCustomSchemeNavigation
-        //      converts to https://web3.okx.com/ul/v1/wc?uri=... → tg.openLink → Universal Links → OKX
-        if (!IS_ANDROID) {
-            try { delete window.TelegramWebviewProxy; } catch (_) {}
-        }
+        // Non-TMA mode for ALL platforms:
+        // OKX_WALLET_BOT is defunct since Sep 2025 — TMA mode causes silent failures
+        // because SDK tries openTelegramLink → OKX_WALLET_BOT which no longer works.
+        // Fix: delete TelegramWebviewProxy → forces non-TMA → SDK navigates okx://
+        // → patchCustomSchemeNavigation converts to platform-specific HTTPS deep links:
+        //   Android: https://www.okx.com/download?deep_link=okx%3A%2F%2F... (App Links)
+        //   iOS:     https://web3.okx.com/ul/v1/wc?uri=... (Universal Links)
+        try { delete window.TelegramWebviewProxy; } catch (_) {}
 
         /* --- Desktop detection --- */
         function isMobile() {
