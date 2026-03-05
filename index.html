@@ -72,26 +72,44 @@
         patchOKXTelegramLink();
     })();
 
-    // Android fix: OKX SDK in non-TMA mode navigates window.location.href to okx:// deep link.
-    // Telegram's Android WebView doesn't handle custom URL schemes → ERR_UNKNOWN_URL_SCHEME crash.
-    // Intercept and route through tg.openLink() which uses Android Intent dispatch to open OKX app.
+    // Non-TMA mode: OKX SDK navigates to okx:// deep link which crashes Android WebView.
+    // Intercept every navigation to a custom scheme and route through tg.openLink() instead.
+    // For okx:// we extract the full WalletConnect URI (wc:...) and build the OKX universal link
+    // https://web3.okx.com/ul/v1/wc?uri=... so OKX app receives the pairing info correctly.
     (function patchCustomSchemeNavigation() {
         function handleCustomUrl(url) {
             if (!url || typeof url !== 'string') return false;
             var scheme;
             try { scheme = new URL(url).protocol; } catch (e) { return false; }
             if (scheme === 'http:' || scheme === 'https:' || scheme === 'javascript:' || scheme === 'tg:') return false;
-            console.log('[SchemeInterceptor] Custom scheme caught:', scheme, url.substring(0, 100));
+            console.log('[SchemeInterceptor] Custom scheme caught:', scheme, url.substring(0, 120));
+            if (window._dbg) window._dbg('scheme=' + scheme + ' ' + url.substring(0, 80));
             try {
-                var openUrl = url;
+                var openUrl;
                 if (scheme === 'okx:') {
-                    // Convert okx:// to HTTPS universal link (more compatible)
                     var u = new URL(url);
-                    openUrl = 'https://web3.okx.com' + u.pathname + u.search + u.hash;
+                    // okx://main/walletconnect/dcuri?uri=wc%3A...&redirect=tg%3A%2F%2Fresolve
+                    var wcUri    = u.searchParams.get('uri');
+                    var redirect = u.searchParams.get('redirect');
+                    if (wcUri) {
+                        // Full WC pairing URI present — build proper OKX universal link
+                        openUrl = 'https://web3.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUri);
+                        if (redirect) openUrl += '&redirectUrl=' + encodeURIComponent(redirect);
+                        console.log('[SchemeInterceptor] WC URI extracted, openUrl:', openUrl.substring(0, 100));
+                        if (window._dbg) window._dbg('wcUri found, openUrl=' + openUrl.substring(0, 80));
+                    } else {
+                        // Fallback: map okx:// path to web3.okx.com
+                        openUrl = 'https://web3.okx.com' + u.pathname + u.search + u.hash;
+                        console.log('[SchemeInterceptor] No wcUri, fallback:', openUrl.substring(0, 100));
+                        if (window._dbg) window._dbg('no wcUri, fallback=' + openUrl.substring(0, 80));
+                    }
+                } else {
+                    openUrl = url; // other custom schemes: pass as-is to tg.openLink
                 }
                 window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
             } catch (e) {
                 console.error('[SchemeInterceptor] openLink failed:', e.message);
+                if (window._dbg) window._dbg('openLink error: ' + e.message);
             }
             return true;
         }
@@ -484,16 +502,14 @@
         tg.ready();
         tg.expand();
 
-        // OKX TMA bot (@OKX_WALLET_BOT) is defunct since Sep 30, 2025.
-        // Android: keep TelegramWebviewProxy → SDK stays in TMA mode → calls openTelegramLink()
-        //   → patchOKXTelegramLink() (in <head>) redirects to OKX universal link via tg.openLink().
-        //   This avoids okx:// deep links entirely → no ERR_UNKNOWN_URL_SCHEME on Android.
-        // iOS/other: delete proxy → non-TMA mode → SDK generates okx:// deep links
-        //   → patchCustomSchemeNavigation() converts to https://web3.okx.com/... → tg.openLink().
-        //   iOS WKWebView silently ignores unknown schemes so this path is safe.
-        if (!IS_ANDROID) {
-            try { delete window.TelegramWebviewProxy; } catch (_) {}
-        }
+        // Non-TMA mode on ALL platforms (iOS + Android).
+        // OKX_WALLET_BOT is defunct since Sep 30 2025 so TMA relay flow is broken.
+        // Delete proxy → SDK uses okx:// deep links (redirect flow) → page reloads after approval.
+        // patchCustomSchemeNavigation() in <head> intercepts okx:// before it hits WebView,
+        // extracts the full wc: URI and calls tg.openLink(https://web3.okx.com/ul/v1/wc?uri=...)
+        // which opens OKX app via Telegram native Intent/openURL (not WebView navigation).
+        // Redirect flow: OKX app redirects back → mini app reloads → initProvider(true) restores session.
+        try { delete window.TelegramWebviewProxy; } catch (_) {}
 
         /* --- Desktop detection --- */
         function isMobile() {
