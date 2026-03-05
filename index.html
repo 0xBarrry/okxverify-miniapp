@@ -512,6 +512,18 @@
     </div>
 
     <script>
+        /* --- Global error handlers — catch silent JS crashes --- */
+        window.onerror = function(msg, src, line, col, err) {
+            var m = '[UNCAUGHT] ' + msg + ' at ' + (src||'?') + ':' + line + ':' + col;
+            console.error(m, err);
+            if (window._dbg) window._dbg(m);
+        };
+        window.addEventListener('unhandledrejection', function(ev) {
+            var m = '[PROMISE] ' + (ev.reason ? (ev.reason.message || String(ev.reason)) : 'unknown');
+            console.error(m, ev.reason);
+            if (window._dbg) window._dbg(m);
+        });
+
         /* --- Globals --- */
         const tg = window.Telegram.WebApp;
         tg.ready();
@@ -796,13 +808,7 @@
             setProgress(2);
             scrollToStep('step2');
 
-            // Pre-init provider NOW so it's ready when user taps Connect
-            // (await ensures no async gap between tap and provider.connect)
-            try {
-                await initProvider(false);
-            } catch (e) {
-                console.error('Provider init failed:', e);
-            }
+            // Provider init moved to connectWallet() — double init caused issues on some Android devices
         }
 
         function completeStep(stepNum) {
@@ -936,7 +942,8 @@
 
         /* --- Step 2: Connect Wallet --- */
         async function connectWallet() {
-            if (isConnecting) return; // prevent double-click
+            dbg('connectWallet() called, isConnecting=' + isConnecting + ' net=' + selectedNetwork);
+            if (isConnecting) { dbg('BLOCKED: isConnecting=true'); return; }
             isConnecting = true;
 
             hideError('err-connect');
@@ -948,6 +955,7 @@
             );
 
             try {
+                dbg('fresh provider init...');
                 // Always start with a fresh provider — prevents cross-network
                 // session conflicts (e.g. Solana state lingering when connecting EVM)
                 if (provider) {
@@ -957,12 +965,14 @@
                 solanaProvider = null;
                 clearOKXSessions();
                 await initProvider(false);
-                dbg('calling provider.connect() for ' + selectedNetwork);
+                dbg('initProvider done, calling provider.connect() for ' + selectedNetwork);
                 // Start continuous relay poller — fires every 2s regardless of visibilitychange
                 startRelayPoller();
 
+                dbg('provider.connect() about to fire...');
                 let session;
                 if (selectedNetwork === 'solana') {
+                    dbg('solana connect...');
                     session = await provider.connect({
                         namespaces: {
                             solana: {
@@ -987,6 +997,7 @@
                     }
                     showStep3(ns.accounts[0].split(':').pop());
                 } else {
+                    dbg('evm connect...');
                     session = await provider.connect({
                         namespaces: {
                             eip155: {
