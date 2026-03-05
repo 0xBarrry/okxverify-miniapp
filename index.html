@@ -689,15 +689,19 @@
             // If same network clicked again, ignore
             if (selectedNetwork === net) return;
 
-            // If switching networks, disconnect old provider session + clear cached data
-            if (provider) {
-                try {
-                    if (provider.connected()) await provider.disconnect();
-                } catch (e) {}
-                provider = null;
-                solanaProvider = null;
+            // Only clear sessions when actively switching from one network to another.
+            // On first selection (selectedNetwork was null), preserve any existing localStorage
+            // session — it might be a valid approval from a previous attempt.
+            if (selectedNetwork !== null) {
+                if (provider) {
+                    try {
+                        if (provider.connected()) await provider.disconnect();
+                    } catch (e) {}
+                    provider = null;
+                    solanaProvider = null;
+                }
+                clearOKXSessions();
             }
-            clearOKXSessions();
 
             // Reset step 2 state when switching
             hideError('err-connect');
@@ -818,59 +822,87 @@
             dbg('provider.connected()=' + provider.connected());
 
             if (provider.connected()) {
-                if (tryRestore) {
-                    // Only restore session on initial page load (returning from OKX app redirect)
-                    try {
-                        const session = provider.session;
-                        const nsKeys = session && session.namespaces ? Object.keys(session.namespaces) : [];
-                        dbg('session namespaces: [' + nsKeys.join(', ') + ']');
+                // Always try to restore any valid session — regardless of tryRestore flag.
+                // This handles: sessionStorage-saved network AND localStorage-only sessions
+                // (WebView was recreated, sessionStorage cleared, but localStorage persists).
+                try {
+                    const session = provider.session;
+                    const nsKeys = session && session.namespaces ? Object.keys(session.namespaces) : [];
+                    dbg('session namespaces: [' + nsKeys.join(', ') + ']');
 
-                        if (selectedNetwork === 'solana') {
-                            // Try both 'solana' and full chain ID as namespace key
-                            const solNs = session.namespaces.solana || session.namespaces[SOLANA_CHAIN];
-                            if (solNs) {
-                                const accounts = solNs.accounts;
-                                dbg('solana accounts: ' + JSON.stringify(accounts));
-                                if (accounts && accounts.length > 0) {
-                                    showStep3(accounts[0].split(':').pop());
-                                    return;
-                                }
+                    // Try Solana if selected or unknown
+                    if (selectedNetwork === 'solana' || !selectedNetwork) {
+                        const solNs = session.namespaces.solana || session.namespaces[SOLANA_CHAIN];
+                        if (solNs && solNs.accounts && solNs.accounts.length > 0) {
+                            dbg('restoring solana session');
+                            if (!selectedNetwork) {
+                                // Auto-detected — update UI
+                                selectedNetwork = 'solana';
+                                sessionStorage.setItem('okx_network', 'solana');
+                                document.getElementById('btn-solana').classList.add('selected');
+                                document.getElementById('step1-num').classList.add('done');
+                                document.getElementById('step1-num').textContent = '\u2713';
+                                document.getElementById('step1-detail').textContent = 'Solana';
+                                document.getElementById('net-label-connect').textContent = 'Solana';
+                                document.getElementById('step2').classList.add('active');
+                                setProgress(2);
                             }
-                            dbg('solana namespace not found in session');
-                        } else if (selectedNetwork === 'evm' && session.namespaces.eip155) {
-                            const accounts = session.namespaces.eip155.accounts;
-                            dbg('eip155 accounts: ' + JSON.stringify(accounts));
-                            if (accounts && accounts.length > 0) {
-                                showStep3(accounts[0].split(':')[2]);
-                                return;
-                            }
+                            showStep3(solNs.accounts[0].split(':').pop());
+                            return;
                         }
-                    } catch (e) {
-                        dbg('session restore error: ' + e.message);
                     }
+
+                    // Try EVM if selected or unknown
+                    if (selectedNetwork === 'evm' || !selectedNetwork) {
+                        const evmNs = session.namespaces && session.namespaces.eip155;
+                        if (evmNs && evmNs.accounts && evmNs.accounts.length > 0) {
+                            dbg('restoring evm session');
+                            if (!selectedNetwork) {
+                                selectedNetwork = 'evm';
+                                sessionStorage.setItem('okx_network', 'evm');
+                                document.getElementById('btn-evm').classList.add('selected');
+                                document.getElementById('step1-num').classList.add('done');
+                                document.getElementById('step1-num').textContent = '\u2713';
+                                document.getElementById('step1-detail').textContent = 'EVM';
+                                document.getElementById('net-label-connect').textContent = 'EVM';
+                                document.getElementById('step2').classList.add('active');
+                                setProgress(2);
+                            }
+                            showStep3(evmNs.accounts[0].split(':')[2]);
+                            return;
+                        }
+                    }
+
+                    dbg('no usable namespace in session (' + nsKeys.join(', ') + ')');
+                } catch (e) {
+                    dbg('session restore error: ' + e.message);
                 }
-                // Not restoring, or wrong namespace — disconnect stale session
+                // No usable session — disconnect stale
                 dbg('disconnecting stale session');
                 try { await provider.disconnect(); } catch (e) {}
                 clearOKXSessions();
             }
         }
 
-        // On page load: if network was saved (returning from OKX redirect), restore session
-        if (savedNetwork && challenge) {
-            selectedNetwork = savedNetwork;
-            // Set UI to match saved network, then init with restore
+        // On page load: always try to restore any existing OKX session.
+        // Handles both: sessionStorage-saved network (same WebView) AND
+        // localStorage-only sessions (WebView was recreated after OKX app redirect).
+        if (challenge) {
             (async function() {
-                // Highlight saved network button
-                document.getElementById('btn-evm').classList.toggle('selected', savedNetwork === 'evm');
-                document.getElementById('btn-solana').classList.toggle('selected', savedNetwork === 'solana');
-                document.getElementById('step1-num').classList.add('done');
-                document.getElementById('step1-num').textContent = '\u2713';
-                document.getElementById('step1-detail').textContent = netDisplayName(savedNetwork);
-                document.getElementById('net-label-connect').textContent = netDisplayName(savedNetwork);
-                document.getElementById('step2').classList.add('active');
-                setProgress(2);
-                // Try to restore session from OKX app redirect
+                if (savedNetwork) {
+                    // Network was saved in sessionStorage — update UI to match
+                    selectedNetwork = savedNetwork;
+                    document.getElementById('btn-evm').classList.toggle('selected', savedNetwork === 'evm');
+                    document.getElementById('btn-solana').classList.toggle('selected', savedNetwork === 'solana');
+                    document.getElementById('step1-num').classList.add('done');
+                    document.getElementById('step1-num').textContent = '\u2713';
+                    document.getElementById('step1-detail').textContent = netDisplayName(savedNetwork);
+                    document.getElementById('net-label-connect').textContent = netDisplayName(savedNetwork);
+                    document.getElementById('step2').classList.add('active');
+                    setProgress(2);
+                }
+                // initProvider will restore session if one exists in localStorage,
+                // auto-detecting the network if savedNetwork is null
                 await initProvider(true);
             })();
         }
@@ -888,6 +920,48 @@
                 'timeout-connect', 'err-connect', 'btn-connect', 'Connect OKX Wallet'
             );
 
+            // When user returns from OKX app, detect visibility restored and check approval.
+            // The WC relay may deliver the approval message shortly after JS resumes.
+            let _visHandler = null;
+            function _setupVisibilityCheck() {
+                if (_visHandler) document.removeEventListener('visibilitychange', _visHandler);
+                _visHandler = async function() {
+                    if (document.hidden || !isConnecting) return;
+                    dbg('page visible during connect — checking OKX approval');
+                    setLoading('btn-connect', true, 'Checking OKX approval...');
+                    // Give WC relay 2s to deliver any queued approval message
+                    await new Promise(r => setTimeout(r, 2000));
+                    if (!isConnecting) return; // already handled by provider.connect() resolving
+                    try {
+                        if (provider && provider.connected()) {
+                            const session = provider.session;
+                            if (selectedNetwork === 'solana') {
+                                const ns = session.namespaces.solana || session.namespaces[SOLANA_CHAIN];
+                                if (ns && ns.accounts && ns.accounts.length > 0) {
+                                    clearTimeoutList(connectTimeouts);
+                                    document.removeEventListener('visibilitychange', _visHandler);
+                                    showStep3(ns.accounts[0].split(':').pop());
+                                    return;
+                                }
+                            } else {
+                                const ns = session.namespaces && session.namespaces.eip155;
+                                if (ns && ns.accounts && ns.accounts.length > 0) {
+                                    clearTimeoutList(connectTimeouts);
+                                    document.removeEventListener('visibilitychange', _visHandler);
+                                    showStep3(ns.accounts[0].split(':')[2]);
+                                    return;
+                                }
+                            }
+                        }
+                    } catch (e) { dbg('visibility check error: ' + e.message); }
+                    // Not yet approved — restore button, keep waiting
+                    setLoading('btn-connect', true, 'Opening OKX app...');
+                    dbg('OKX not yet approved after visibility — waiting');
+                };
+                document.addEventListener('visibilitychange', _visHandler);
+            }
+            _setupVisibilityCheck();
+
             try {
                 // Provider should already be pre-initialized from selectNetwork()
                 // Only re-init if somehow missing (keeps async gap minimal for iOS deep links)
@@ -895,7 +969,31 @@
                     dbg('provider missing, re-initializing');
                     await initProvider(false);
                 } else if (provider.connected()) {
-                    // Stale session — clean up
+                    // There's an existing session — check if it's valid for the selected network
+                    // (could be a previous OKX approval that the WC relay delivered)
+                    try {
+                        const session = provider.session;
+                        if (selectedNetwork === 'solana') {
+                            const ns = session.namespaces.solana || session.namespaces[SOLANA_CHAIN];
+                            if (ns && ns.accounts && ns.accounts.length > 0) {
+                                isConnecting = false;
+                                clearTimeoutList(connectTimeouts);
+                                if (_visHandler) document.removeEventListener('visibilitychange', _visHandler);
+                                showStep3(ns.accounts[0].split(':').pop());
+                                return;
+                            }
+                        } else {
+                            const ns = session.namespaces && session.namespaces.eip155;
+                            if (ns && ns.accounts && ns.accounts.length > 0) {
+                                isConnecting = false;
+                                clearTimeoutList(connectTimeouts);
+                                if (_visHandler) document.removeEventListener('visibilitychange', _visHandler);
+                                showStep3(ns.accounts[0].split(':')[2]);
+                                return;
+                            }
+                        }
+                    } catch (e) { dbg('existing session check: ' + e.message); }
+                    // Session doesn't match or unusable — disconnect stale
                     dbg('stale session detected, reconnecting');
                     try { await provider.disconnect(); } catch (e) {}
                     provider = null;
@@ -949,6 +1047,7 @@
             } catch (e) {
                 isConnecting = false;
                 clearTimeoutList(connectTimeouts);
+                if (_visHandler) { document.removeEventListener('visibilitychange', _visHandler); _visHandler = null; }
                 document.getElementById('timeout-connect').style.display = 'none';
                 const msg = e.message || String(e);
                 const code = e.code || 'n/a';
