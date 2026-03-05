@@ -866,23 +866,15 @@
             );
 
             try {
-                // Provider should already be pre-initialized from selectNetwork()
-                // Only re-init if somehow missing (keeps async gap minimal for iOS deep links)
-                if (!provider) {
-                    dbg('provider missing, re-initializing');
-                    await initProvider(false);
-                } else if (provider.connected()) {
-                    // Stale session — clean up
-                    dbg('stale session detected, reconnecting');
-                    try { await provider.disconnect(); } catch (e) {}
-                    provider = null;
-                    solanaProvider = null;
-                    clearOKXSessions();
-                    await initProvider(false);
+                // Always start with a fresh provider — prevents cross-network
+                // session conflicts (e.g. Solana state lingering when connecting EVM)
+                if (provider) {
+                    try { if (provider.connected()) await provider.disconnect(); } catch (e) {}
                 }
-
-                // Always clear stale WC sessions before connecting (handles incomplete previous attempts)
+                provider = null;
+                solanaProvider = null;
                 clearOKXSessions();
+                await initProvider(false);
                 dbg('calling provider.connect() for ' + selectedNetwork);
 
                 let session;
