@@ -822,65 +822,69 @@
             dbg('provider.connected()=' + provider.connected());
 
             if (provider.connected()) {
-                // Always try to restore any valid session — regardless of tryRestore flag.
-                // This handles: sessionStorage-saved network AND localStorage-only sessions
-                // (WebView was recreated, sessionStorage cleared, but localStorage persists).
-                try {
-                    const session = provider.session;
-                    const nsKeys = session && session.namespaces ? Object.keys(session.namespaces) : [];
-                    dbg('session namespaces: [' + nsKeys.join(', ') + ']');
+                if (tryRestore) {
+                    // Page-load restore: try to recover any valid WC session from localStorage.
+                    // Also handles auto-detecting the network when selectedNetwork is still null
+                    // (WebView was recreated after OKX app redirect, sessionStorage cleared).
+                    try {
+                        const session = provider.session;
+                        const nsKeys = session && session.namespaces ? Object.keys(session.namespaces) : [];
+                        dbg('session namespaces: [' + nsKeys.join(', ') + ']');
 
-                    // Try Solana if selected or unknown
-                    if (selectedNetwork === 'solana' || !selectedNetwork) {
-                        const solNs = session.namespaces.solana || session.namespaces[SOLANA_CHAIN];
-                        if (solNs && solNs.accounts && solNs.accounts.length > 0) {
-                            dbg('restoring solana session');
-                            if (!selectedNetwork) {
-                                // Auto-detected — update UI
-                                selectedNetwork = 'solana';
-                                sessionStorage.setItem('okx_network', 'solana');
-                                document.getElementById('btn-solana').classList.add('selected');
-                                document.getElementById('step1-num').classList.add('done');
-                                document.getElementById('step1-num').textContent = '\u2713';
-                                document.getElementById('step1-detail').textContent = 'Solana';
-                                document.getElementById('net-label-connect').textContent = 'Solana';
-                                document.getElementById('step2').classList.add('active');
-                                setProgress(2);
+                        // Try Solana if selected or unknown
+                        if (selectedNetwork === 'solana' || !selectedNetwork) {
+                            const solNs = session.namespaces.solana || session.namespaces[SOLANA_CHAIN];
+                            if (solNs && solNs.accounts && solNs.accounts.length > 0) {
+                                dbg('restoring solana session');
+                                if (!selectedNetwork) {
+                                    // Auto-detected — update UI
+                                    selectedNetwork = 'solana';
+                                    sessionStorage.setItem('okx_network', 'solana');
+                                    document.getElementById('btn-solana').classList.add('selected');
+                                    document.getElementById('step1-num').classList.add('done');
+                                    document.getElementById('step1-num').textContent = '\u2713';
+                                    document.getElementById('step1-detail').textContent = 'Solana';
+                                    document.getElementById('net-label-connect').textContent = 'Solana';
+                                    document.getElementById('step2').classList.add('active');
+                                    setProgress(2);
+                                }
+                                showStep3(solNs.accounts[0].split(':').pop());
+                                return;
                             }
-                            showStep3(solNs.accounts[0].split(':').pop());
-                            return;
                         }
-                    }
 
-                    // Try EVM if selected or unknown
-                    if (selectedNetwork === 'evm' || !selectedNetwork) {
-                        const evmNs = session.namespaces && session.namespaces.eip155;
-                        if (evmNs && evmNs.accounts && evmNs.accounts.length > 0) {
-                            dbg('restoring evm session');
-                            if (!selectedNetwork) {
-                                selectedNetwork = 'evm';
-                                sessionStorage.setItem('okx_network', 'evm');
-                                document.getElementById('btn-evm').classList.add('selected');
-                                document.getElementById('step1-num').classList.add('done');
-                                document.getElementById('step1-num').textContent = '\u2713';
-                                document.getElementById('step1-detail').textContent = 'EVM';
-                                document.getElementById('net-label-connect').textContent = 'EVM';
-                                document.getElementById('step2').classList.add('active');
-                                setProgress(2);
+                        // Try EVM if selected or unknown
+                        if (selectedNetwork === 'evm' || !selectedNetwork) {
+                            const evmNs = session.namespaces && session.namespaces.eip155;
+                            if (evmNs && evmNs.accounts && evmNs.accounts.length > 0) {
+                                dbg('restoring evm session');
+                                if (!selectedNetwork) {
+                                    selectedNetwork = 'evm';
+                                    sessionStorage.setItem('okx_network', 'evm');
+                                    document.getElementById('btn-evm').classList.add('selected');
+                                    document.getElementById('step1-num').classList.add('done');
+                                    document.getElementById('step1-num').textContent = '\u2713';
+                                    document.getElementById('step1-detail').textContent = 'EVM';
+                                    document.getElementById('net-label-connect').textContent = 'EVM';
+                                    document.getElementById('step2').classList.add('active');
+                                    setProgress(2);
+                                }
+                                showStep3(evmNs.accounts[0].split(':')[2]);
+                                return;
                             }
-                            showStep3(evmNs.accounts[0].split(':')[2]);
-                            return;
                         }
-                    }
 
-                    dbg('no usable namespace in session (' + nsKeys.join(', ') + ')');
-                } catch (e) {
-                    dbg('session restore error: ' + e.message);
+                        dbg('no usable namespace in session (' + nsKeys.join(', ') + ')');
+                    } catch (e) {
+                        dbg('session restore error: ' + e.message);
+                    }
+                    // Stale session on page load — disconnect so provider is clean
+                    dbg('disconnecting stale session');
+                    try { await provider.disconnect(); } catch (e) {}
+                    clearOKXSessions();
                 }
-                // No usable session — disconnect stale
-                dbg('disconnecting stale session');
-                try { await provider.disconnect(); } catch (e) {}
-                clearOKXSessions();
+                // tryRestore=false (called from selectNetwork pre-init): leave any existing
+                // session in place. connectWallet() will validate or disconnect it when needed.
             }
         }
 
