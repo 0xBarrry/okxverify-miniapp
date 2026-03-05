@@ -23,18 +23,44 @@
                     try {
                         var startapp = (url.match(/[?&]startapp=([^&]*)/) || [])[1] || '';
                         // startapp = URL-safe base64 of JSON.stringify({okxconnect, redirect, extraparams, fromtg})
-                        // okxconnect = standard base64 of JSON.stringify({topic, clientId})
+                        // okxconnect = standard base64 of JSON.stringify({topic, clientId, ...})
                         var b64 = startapp.replace(/-/g, '+').replace(/_/g, '/');
                         var pad = (4 - b64.length % 4) % 4;
                         b64 += '==='.slice(0, pad);
                         var outer = JSON.parse(atob(b64));
                         var inner = JSON.parse(atob(outer.okxconnect));
-                        var topic = inner.topic;
-                        var mobileUrl = 'https://web3.okx.com/ul/connect?topic=' + encodeURIComponent(topic);
-                        console.log('[OKX Patch] Intercepted OKX_WALLET_BOT, opening mobile wallet:', mobileUrl);
+
+                        // Debug: log full payload so we know exactly what fields SDK sends
+                        console.log('[OKX Patch] outer keys:', Object.keys(outer).join(', '));
+                        console.log('[OKX Patch] inner:', JSON.stringify(inner));
+                        if (window._dbg) window._dbg('[OKX] inner=' + JSON.stringify(inner));
+
+                        // Build the correct OKX universal link.
+                        // inner.topic can be either:
+                        //   (a) a full WC URI: "wc:HASH@2?relay-protocol=irn&symKey=KEY"
+                        //   (b) just a hash/UUID
+                        // inner may also have .wcUri / .uri / .wcUrl with the full URI.
+                        var wcUri = inner.wcUri || inner.uri || inner.wcUrl || null;
+                        var topic  = inner.topic || '';
+
+                        var mobileUrl;
+                        if (wcUri) {
+                            // Explicit WC URI field — use OKX universal link v1
+                            mobileUrl = 'https://web3.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUri);
+                        } else if (topic.indexOf('wc:') === 0) {
+                            // topic IS the full WC URI
+                            mobileUrl = 'https://web3.okx.com/ul/v1/wc?uri=' + encodeURIComponent(topic);
+                        } else {
+                            // topic is a bare hash — use connect endpoint (original behaviour)
+                            mobileUrl = 'https://web3.okx.com/ul/connect?topic=' + encodeURIComponent(topic);
+                        }
+
+                        console.log('[OKX Patch] mobileUrl:', mobileUrl);
+                        if (window._dbg) window._dbg('[OKX] url=' + mobileUrl);
                         window.Telegram.WebApp.openLink(mobileUrl, { try_instant_view: false });
                     } catch (e) {
                         console.error('[OKX Patch] Decode failed, falling back:', e.message);
+                        if (window._dbg) window._dbg('[OKX] decode error: ' + e.message);
                         _orig(url);
                     }
                 } else {
@@ -506,6 +532,8 @@
             panel.scrollTop = panel.scrollHeight;
             console.log('[DBG]', msg);
         }
+        // Expose dbg to <head> patches (patchOKXTelegramLink runs before body scripts)
+        window._dbg = dbg;
         let challengeB64 = params.get('c');
         let challenge = null;
 
