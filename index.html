@@ -459,11 +459,11 @@
         tg.expand();
 
         // OKX TMA bot (@OKX_WALLET_BOT) is defunct since Sep 30, 2025.
-        // The SDK detects TMA via window.TelegramWebviewProxy and routes connections
-        // through that bot → "connection unsuccessful". Force non-TMA (deep link) mode
-        // by removing the proxy from global scope. telegram-web-app.js already captured
-        // its own reference internally, so tg.sendData() / tg.close() are unaffected.
-        try { delete window.TelegramWebviewProxy; } catch (_) {}
+        // We do NOT delete window.TelegramWebviewProxy — keeping SDK in TMA mode.
+        // In TMA mode the SDK calls openTelegramLink() instead of okx:// deep links.
+        // patchOKXTelegramLink() (in <head>) intercepts that call and redirects to
+        // https://web3.okx.com/ul/connect?topic=... via tg.openLink().
+        // This avoids okx:// navigation entirely → no ERR_UNKNOWN_URL_SCHEME on Android.
 
         /* --- Desktop detection --- */
         function isMobile() {
