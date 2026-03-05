@@ -689,19 +689,15 @@
             // If same network clicked again, ignore
             if (selectedNetwork === net) return;
 
-            // Only clear sessions when actively switching from one network to another.
-            // On first selection (selectedNetwork was null), preserve any existing localStorage
-            // session — it might be a valid approval from a previous attempt.
-            if (selectedNetwork !== null) {
-                if (provider) {
-                    try {
-                        if (provider.connected()) await provider.disconnect();
-                    } catch (e) {}
-                    provider = null;
-                    solanaProvider = null;
-                }
-                clearOKXSessions();
+            // Clear any stale provider session and cached WC data
+            if (provider) {
+                try {
+                    if (provider.connected()) await provider.disconnect();
+                } catch (e) {}
+                provider = null;
+                solanaProvider = null;
             }
+            clearOKXSessions();
 
             // Reset step 2 state when switching
             hideError('err-connect');
