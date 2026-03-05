@@ -38,20 +38,30 @@
                         // Build the correct OKX universal link.
                         // inner.topic can be either:
                         //   (a) a full WC URI: "wc:HASH@2?relay-protocol=irn&symKey=KEY"
-                        //   (b) just a hash/UUID
+                        //   (b) just a hash/UUID (then symKey may be separate in inner.symKey)
                         // inner may also have .wcUri / .uri / .wcUrl with the full URI.
                         var wcUri = inner.wcUri || inner.uri || inner.wcUrl || null;
                         var topic  = inner.topic || '';
 
+                        // Log ALL inner keys so we know the exact payload shape
+                        if (window._dbg) window._dbg('[OKX] inner keys: ' + Object.keys(inner).join(', '));
+
+                        // If no explicit WC URI but we have topic+symKey, construct it
+                        if (!wcUri && inner.symKey && topic && topic.indexOf('wc:') !== 0) {
+                            var relayProto = (inner.relay && inner.relay.protocol) || 'irn';
+                            wcUri = 'wc:' + topic + '@2?relay-protocol=' + relayProto + '&symKey=' + inner.symKey;
+                            if (window._dbg) window._dbg('[OKX] constructed wcUri from topic+symKey');
+                        }
+
                         var mobileUrl;
                         if (wcUri) {
-                            // Explicit WC URI field — use OKX universal link v1
+                            // Explicit WC URI (or constructed) — use OKX universal link v1
                             mobileUrl = 'https://web3.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUri);
                         } else if (topic.indexOf('wc:') === 0) {
                             // topic IS the full WC URI
                             mobileUrl = 'https://web3.okx.com/ul/v1/wc?uri=' + encodeURIComponent(topic);
                         } else {
-                            // topic is a bare hash — use connect endpoint (original behaviour)
+                            // topic is a bare hash, no symKey — fallback to connect endpoint
                             mobileUrl = 'https://web3.okx.com/ul/connect?topic=' + encodeURIComponent(topic);
                         }
 
@@ -541,7 +551,8 @@
         const params = new URLSearchParams(window.location.search);
 
         /* --- Debug mode --- */
-        const DEBUG = params.get('debug') === '1';
+        // Temporarily force-enabled on Android so we can see relay/WC logs
+        const DEBUG = params.get('debug') === '1' || IS_ANDROID;
         function dbg(msg) {
             if (!DEBUG) return;
             const panel = document.getElementById('debug-panel');
@@ -1022,7 +1033,7 @@
             if (document.visibilityState !== 'visible') return;
             if (!isConnecting || connectedAddress) return;
             dbg('visibility→visible, polling for session...');
-            for (var i = 0; i < 20; i++) {   // 20 × 500ms = 10s
+            for (var i = 0; i < 60; i++) {   // 60 × 500ms = 30s
                 await new Promise(function(r) { setTimeout(r, 500); });
                 if (!isConnecting || connectedAddress) return; // already handled
                 try {
