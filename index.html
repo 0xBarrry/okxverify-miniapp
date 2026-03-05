@@ -459,11 +459,15 @@
         tg.expand();
 
         // OKX TMA bot (@OKX_WALLET_BOT) is defunct since Sep 30, 2025.
-        // We do NOT delete window.TelegramWebviewProxy — keeping SDK in TMA mode.
-        // In TMA mode the SDK calls openTelegramLink() instead of okx:// deep links.
-        // patchOKXTelegramLink() (in <head>) intercepts that call and redirects to
-        // https://web3.okx.com/ul/connect?topic=... via tg.openLink().
-        // This avoids okx:// navigation entirely → no ERR_UNKNOWN_URL_SCHEME on Android.
+        // Android: keep TelegramWebviewProxy → SDK stays in TMA mode → calls openTelegramLink()
+        //   → patchOKXTelegramLink() (in <head>) redirects to OKX universal link via tg.openLink().
+        //   This avoids okx:// deep links entirely → no ERR_UNKNOWN_URL_SCHEME on Android.
+        // iOS/other: delete proxy → non-TMA mode → SDK generates okx:// deep links
+        //   → patchCustomSchemeNavigation() converts to https://web3.okx.com/... → tg.openLink().
+        //   iOS WKWebView silently ignores unknown schemes so this path is safe.
+        if (!IS_ANDROID) {
+            try { delete window.TelegramWebviewProxy; } catch (_) {}
+        }
 
         /* --- Desktop detection --- */
         function isMobile() {
