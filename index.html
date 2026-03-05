@@ -40,57 +40,6 @@
         }
         patchOKXTelegramLink();
     })();
-
-    /* --- Platform detection (global — used by head + body scripts) --- */
-    var IS_ANDROID = /Android/i.test(navigator.userAgent);
-    var IS_IOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-    var PLATFORM = IS_ANDROID ? 'android' : IS_IOS ? 'ios' : 'mobile';
-    console.log('[Platform] Detected:', PLATFORM);
-
-    // Both Android and iOS: OKX SDK may navigate window.location.href to okx:// deep link.
-    // Android: Telegram WebView throws ERR_UNKNOWN_URL_SCHEME — must intercept.
-    // iOS: WKWebView may also fail for custom schemes — same fix applies.
-    // Intercept and route through tg.openLink() which uses OS-level Intent/URL dispatch.
-    (function patchCustomSchemeNavigation() {
-        function handleCustomUrl(url) {
-            if (!url || typeof url !== 'string') return false;
-            var scheme;
-            try { scheme = new URL(url).protocol; } catch (e) { return false; }
-            if (scheme === 'http:' || scheme === 'https:' || scheme === 'javascript:' || scheme === 'tg:') return false;
-            console.log('[SchemeInterceptor] Custom scheme caught:', scheme, url.substring(0, 100));
-            try {
-                var openUrl = url;
-                if (scheme === 'okx:') {
-                    // Convert okx:// to HTTPS universal link (more compatible)
-                    var u = new URL(url);
-                    openUrl = 'https://web3.okx.com' + u.pathname + u.search + u.hash;
-                }
-                window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
-            } catch (e) {
-                console.error('[SchemeInterceptor] openLink failed:', e.message);
-            }
-            return true;
-        }
-
-        // Intercept Location.prototype.href setter (covers window.location.href = 'okx://...')
-        var locDesc = Object.getOwnPropertyDescriptor(Location.prototype, 'href');
-        if (locDesc && locDesc.set) {
-            Object.defineProperty(Location.prototype, 'href', {
-                get: locDesc.get,
-                set: function(url) { if (!handleCustomUrl(url)) locDesc.set.call(this, url); },
-                configurable: true
-            });
-        }
-
-        // Intercept window.open (covers window.open('okx://...'))
-        var _origOpen = window.open;
-        window.open = function(url, target, features) {
-            if (handleCustomUrl(url)) return { focus: function(){}, close: function(){} };
-            return _origOpen ? _origOpen.apply(window, arguments) : null;
-        };
-
-        console.log('[SchemeInterceptor] Active, platform=' + PLATFORM);
-    })();
     </script>
     <script src="https://cdn.jsdelivr.net/npm/@okxconnect/universal-provider@1.9.1/dist/okxconnect_universal.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/@okxconnect/solana-provider@1.9.1/dist/okxconnect_solana.min.js"></script>
@@ -412,7 +361,6 @@
             <button id="btn-connect" onclick="connectWallet()">Connect OKX Wallet</button>
             <div id="timeout-connect" class="timeout-status"></div>
             <div id="err-connect" class="error"></div>
-            <button id="btn-update-okx" onclick="openOKXStore()" style="display:none; margin-top:10px; background:rgba(255,255,255,0.1); font-size:13px; padding:11px; color:var(--tg-theme-text-color,#fff);">⬇️ Get / Update OKX Wallet</button>
         </div>
 
         <!-- Step 3: Auto-submit (no signing required) -->
@@ -424,7 +372,6 @@
             <p class="step-desc"><span class="spinner"></span> Submitting to bot...</p>
             <div id="wallet-addr" class="addr"></div>
             <div id="err-sign" class="error"></div>
-            <button id="btn-close-sign" onclick="tg.close()" style="display:none; margin-top:10px; background:rgba(255,255,255,0.1); font-size:13px; padding:11px; color:var(--tg-theme-text-color,#fff);">← Back to Bot</button>
         </div>
 
         <!-- Step 4: Success (shown briefly before sendData closes the app) -->
@@ -453,8 +400,7 @@
         // its own reference internally, so tg.sendData() / tg.close() are unaffected.
         try { delete window.TelegramWebviewProxy; } catch (_) {}
 
-        /* --- Desktop + platform detection --- */
-        // IS_ANDROID / IS_IOS / PLATFORM declared in head <script> (global scope)
+        /* --- Desktop detection --- */
         function isMobile() {
             return /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent)
                 || (navigator.maxTouchPoints && navigator.maxTouchPoints > 2);
@@ -465,8 +411,6 @@
             document.getElementById('main-content').style.display = 'none';
             throw new Error('Desktop detected — halting Mini App');
         }
-
-        dbg && dbg('platform=' + PLATFORM + ' ua=' + navigator.userAgent.substring(0, 80));
 
         let provider = null;
         let solanaProvider = null; // OKXSolanaProvider wrapper
@@ -643,12 +587,9 @@
 
             timeouts.push(setTimeout(() => {
                 statusEl.style.display = 'none';
-                showError(errorId, 'Connection timed out.\n\nMake sure OKX Wallet app is installed and open, then tap the button above to try again.');
+                showError(errorId, 'Connection timed out. Make sure the OKX app is installed and try again.');
                 setLoading(btnId, false, btnText);
                 isConnecting = false;
-                if (errorId === 'err-connect') {
-                    document.getElementById('btn-update-okx').style.display = 'block';
-                }
             }, 120000));
 
             return timeouts;
@@ -669,17 +610,6 @@
             dot3.className = 'progress-dot ' + (step >= 3 ? (step > 3 ? 'done' : 'active') : '');
         }
 
-        /* --- Open OKX Wallet store page for update --- */
-        function openOKXStore() {
-            const ua = navigator.userAgent.toLowerCase();
-            const url = ua.includes('iphone') || ua.includes('ipad')
-                ? 'https://apps.apple.com/app/okx/id1327268470'
-                : ua.includes('android')
-                ? 'https://play.google.com/store/apps/details?id=com.okinc.okex.gp'
-                : 'https://www.okx.com/download';
-            window.Telegram.WebApp.openLink(url, { try_instant_view: false });
-        }
-
         /* --- Step transitions --- */
         async function selectNetwork(net) {
             dbg('selectNetwork(' + net + ')');
@@ -689,7 +619,7 @@
             // If same network clicked again, ignore
             if (selectedNetwork === net) return;
 
-            // Clear any stale provider session and cached WC data
+            // If switching networks, disconnect old provider session + clear cached data
             if (provider) {
                 try {
                     if (provider.connected()) await provider.disconnect();
@@ -702,7 +632,6 @@
             // Reset step 2 state when switching
             hideError('err-connect');
             document.getElementById('timeout-connect').style.display = 'none';
-            document.getElementById('btn-update-okx').style.display = 'none';
             clearTimeoutList(connectTimeouts);
             document.getElementById('btn-connect').style.display = '';
             setLoading('btn-connect', false, 'Connect OKX Wallet');
@@ -773,8 +702,7 @@
             // Auto-submit immediately — OKX Connect approval already proves wallet ownership
             dbg('auto-submit: addr=' + address + ' challenge=' + (challenge ? challenge.substring(0,20)+'...' : 'null'));
             if (!challenge) {
-                showError('err-sign', 'Session expired. Tap the button below, then tap Verify in the bot again.');
-                document.getElementById('btn-close-sign').style.display = 'block';
+                showError('err-sign', 'Session expired. Close this page and tap Verify in the bot again.');
                 return;
             }
             tg.sendData(JSON.stringify({
@@ -819,75 +747,49 @@
 
             if (provider.connected()) {
                 if (tryRestore) {
-                    // Page-load restore: try to recover any valid WC session from localStorage.
-                    // Also handles auto-detecting the network when selectedNetwork is still null
-                    // (WebView was recreated after OKX app redirect, sessionStorage cleared).
+                    // Only restore session on initial page load (returning from OKX app redirect)
                     try {
                         const session = provider.session;
                         const nsKeys = session && session.namespaces ? Object.keys(session.namespaces) : [];
                         dbg('session namespaces: [' + nsKeys.join(', ') + ']');
 
-                        // Try Solana if selected or unknown
-                        if (selectedNetwork === 'solana' || !selectedNetwork) {
+                        if (selectedNetwork === 'solana') {
+                            // Try both 'solana' and full chain ID as namespace key
                             const solNs = session.namespaces.solana || session.namespaces[SOLANA_CHAIN];
-                            if (solNs && solNs.accounts && solNs.accounts.length > 0) {
-                                dbg('restoring solana session');
-                                if (!selectedNetwork) {
-                                    // Auto-detected — update UI
-                                    selectedNetwork = 'solana';
-                                    sessionStorage.setItem('okx_network', 'solana');
-                                    document.getElementById('btn-solana').classList.add('selected');
-                                    document.getElementById('step1-num').classList.add('done');
-                                    document.getElementById('step1-num').textContent = '\u2713';
-                                    document.getElementById('step1-detail').textContent = 'Solana';
-                                    document.getElementById('net-label-connect').textContent = 'Solana';
-                                    document.getElementById('step2').classList.add('active');
-                                    setProgress(2);
+                            if (solNs) {
+                                const accounts = solNs.accounts;
+                                dbg('solana accounts: ' + JSON.stringify(accounts));
+                                if (accounts && accounts.length > 0) {
+                                    showStep3(accounts[0].split(':').pop());
+                                    return;
                                 }
-                                showStep3(solNs.accounts[0].split(':').pop());
+                            }
+                            dbg('solana namespace not found in session');
+                        } else if (selectedNetwork === 'evm' && session.namespaces.eip155) {
+                            const accounts = session.namespaces.eip155.accounts;
+                            dbg('eip155 accounts: ' + JSON.stringify(accounts));
+                            if (accounts && accounts.length > 0) {
+                                showStep3(accounts[0].split(':')[2]);
                                 return;
                             }
                         }
-
-                        // Try EVM if selected or unknown
-                        if (selectedNetwork === 'evm' || !selectedNetwork) {
-                            const evmNs = session.namespaces && session.namespaces.eip155;
-                            if (evmNs && evmNs.accounts && evmNs.accounts.length > 0) {
-                                dbg('restoring evm session');
-                                if (!selectedNetwork) {
-                                    selectedNetwork = 'evm';
-                                    sessionStorage.setItem('okx_network', 'evm');
-                                    document.getElementById('btn-evm').classList.add('selected');
-                                    document.getElementById('step1-num').classList.add('done');
-                                    document.getElementById('step1-num').textContent = '\u2713';
-                                    document.getElementById('step1-detail').textContent = 'EVM';
-                                    document.getElementById('net-label-connect').textContent = 'EVM';
-                                    document.getElementById('step2').classList.add('active');
-                                    setProgress(2);
-                                }
-                                showStep3(evmNs.accounts[0].split(':')[2]);
-                                return;
-                            }
-                        }
-
-                        dbg('no usable namespace in session (' + nsKeys.join(', ') + ')');
                     } catch (e) {
                         dbg('session restore error: ' + e.message);
                     }
-                    // Stale session on page load — disconnect so provider is clean
-                    dbg('disconnecting stale session');
-                    try { await provider.disconnect(); } catch (e) {}
-                    clearOKXSessions();
                 }
-                // tryRestore=false (called from selectNetwork pre-init): leave any existing
-                // session in place. connectWallet() will validate or disconnect it when needed.
+                // Not restoring, or wrong namespace — disconnect stale session
+                dbg('disconnecting stale session');
+                try { await provider.disconnect(); } catch (e) {}
+                clearOKXSessions();
             }
         }
 
         // On page load: if network was saved (returning from OKX redirect), restore session
         if (savedNetwork && challenge) {
             selectedNetwork = savedNetwork;
+            // Set UI to match saved network, then init with restore
             (async function() {
+                // Highlight saved network button
                 document.getElementById('btn-evm').classList.toggle('selected', savedNetwork === 'evm');
                 document.getElementById('btn-solana').classList.toggle('selected', savedNetwork === 'solana');
                 document.getElementById('step1-num').classList.add('done');
@@ -896,6 +798,7 @@
                 document.getElementById('net-label-connect').textContent = netDisplayName(savedNetwork);
                 document.getElementById('step2').classList.add('active');
                 setProgress(2);
+                // Try to restore session from OKX app redirect
                 await initProvider(true);
             })();
         }
@@ -913,48 +816,6 @@
                 'timeout-connect', 'err-connect', 'btn-connect', 'Connect OKX Wallet'
             );
 
-            // When user returns from OKX app, detect visibility restored and check approval.
-            // The WC relay may deliver the approval message shortly after JS resumes.
-            let _visHandler = null;
-            function _setupVisibilityCheck() {
-                if (_visHandler) document.removeEventListener('visibilitychange', _visHandler);
-                _visHandler = async function() {
-                    if (document.hidden || !isConnecting) return;
-                    dbg('page visible during connect — checking OKX approval');
-                    setLoading('btn-connect', true, 'Checking OKX approval...');
-                    // Give WC relay 2s to deliver any queued approval message
-                    await new Promise(r => setTimeout(r, 2000));
-                    if (!isConnecting) return; // already handled by provider.connect() resolving
-                    try {
-                        if (provider && provider.connected()) {
-                            const session = provider.session;
-                            if (selectedNetwork === 'solana') {
-                                const ns = session.namespaces.solana || session.namespaces[SOLANA_CHAIN];
-                                if (ns && ns.accounts && ns.accounts.length > 0) {
-                                    clearTimeoutList(connectTimeouts);
-                                    document.removeEventListener('visibilitychange', _visHandler);
-                                    showStep3(ns.accounts[0].split(':').pop());
-                                    return;
-                                }
-                            } else {
-                                const ns = session.namespaces && session.namespaces.eip155;
-                                if (ns && ns.accounts && ns.accounts.length > 0) {
-                                    clearTimeoutList(connectTimeouts);
-                                    document.removeEventListener('visibilitychange', _visHandler);
-                                    showStep3(ns.accounts[0].split(':')[2]);
-                                    return;
-                                }
-                            }
-                        }
-                    } catch (e) { dbg('visibility check error: ' + e.message); }
-                    // Not yet approved — restore button, keep waiting
-                    setLoading('btn-connect', true, 'Opening OKX app...');
-                    dbg('OKX not yet approved after visibility — waiting');
-                };
-                document.addEventListener('visibilitychange', _visHandler);
-            }
-            _setupVisibilityCheck();
-
             try {
                 // Provider should already be pre-initialized from selectNetwork()
                 // Only re-init if somehow missing (keeps async gap minimal for iOS deep links)
@@ -962,31 +823,7 @@
                     dbg('provider missing, re-initializing');
                     await initProvider(false);
                 } else if (provider.connected()) {
-                    // There's an existing session — check if it's valid for the selected network
-                    // (could be a previous OKX approval that the WC relay delivered)
-                    try {
-                        const session = provider.session;
-                        if (selectedNetwork === 'solana') {
-                            const ns = session.namespaces.solana || session.namespaces[SOLANA_CHAIN];
-                            if (ns && ns.accounts && ns.accounts.length > 0) {
-                                isConnecting = false;
-                                clearTimeoutList(connectTimeouts);
-                                if (_visHandler) document.removeEventListener('visibilitychange', _visHandler);
-                                showStep3(ns.accounts[0].split(':').pop());
-                                return;
-                            }
-                        } else {
-                            const ns = session.namespaces && session.namespaces.eip155;
-                            if (ns && ns.accounts && ns.accounts.length > 0) {
-                                isConnecting = false;
-                                clearTimeoutList(connectTimeouts);
-                                if (_visHandler) document.removeEventListener('visibilitychange', _visHandler);
-                                showStep3(ns.accounts[0].split(':')[2]);
-                                return;
-                            }
-                        }
-                    } catch (e) { dbg('existing session check: ' + e.message); }
-                    // Session doesn't match or unusable — disconnect stale
+                    // Stale session — clean up
                     dbg('stale session detected, reconnecting');
                     try { await provider.disconnect(); } catch (e) {}
                     provider = null;
@@ -1040,7 +877,6 @@
             } catch (e) {
                 isConnecting = false;
                 clearTimeoutList(connectTimeouts);
-                if (_visHandler) { document.removeEventListener('visibilitychange', _visHandler); _visHandler = null; }
                 document.getElementById('timeout-connect').style.display = 'none';
                 const msg = e.message || String(e);
                 const code = e.code || 'n/a';
@@ -1050,25 +886,19 @@
                 if (msg.includes('reject') || msg.includes('cancel') || msg.includes('declined')) {
                     showError('err-connect', 'Connection cancelled. Tap the button to try again.');
                 } else if (msg.includes('not installed') || msg.includes('not found')) {
-                    showError('err-connect', 'OKX Wallet app not found.\n\nInstall OKX Wallet, then tap "Connect OKX Wallet" to try again.');
-                    document.getElementById('btn-update-okx').style.display = 'block';
+                    showError('err-connect', 'OKX Wallet app not found. Please install it and try again.');
                 } else if (msg.includes('already connected') || msg.includes('session')) {
                     try { if (provider) provider.disconnect(); provider = null; } catch (e2) {}
                     showError('err-connect', 'Session conflict. Please tap Connect again.');
                 } else if (selectedNetwork === 'solana') {
-                    const solSteps = IS_ANDROID
-                        ? '1. Update OKX Wallet on Google Play (button below)\n2. In OKX app → make sure you have a Solana (SOL) wallet\n3. Come back and tap "Connect OKX Wallet" again'
-                        : '1. Update OKX Wallet on App Store (button below)\n2. In OKX app → make sure you have a Solana (SOL) wallet\n3. Come back and tap "Connect OKX Wallet" again';
-                    showError('err-connect', 'Solana connection failed.\n\n' + solSteps);
-                    document.getElementById('btn-update-okx').style.display = 'block';
+                    showError('err-connect',
+                        'Solana connection failed.\n' +
+                        'Error code: ' + code + '\n' +
+                        'Error: ' + msg + '\n\n' +
+                        'Make sure OKX app is v6.90.1+ and you have a Solana wallet.'
+                    );
                 } else {
-                    const platformHint = IS_ANDROID
-                        ? '\n\nMake sure OKX Wallet is installed on your Android and try again.'
-                        : IS_IOS
-                        ? '\n\nMake sure OKX Wallet is installed on your iPhone and try again.'
-                        : '';
-                    showError('err-connect', 'Could not connect to OKX Wallet.\nError code: ' + code + '\nError: ' + msg + platformHint);
-                    document.getElementById('btn-update-okx').style.display = 'block';
+                    showError('err-connect', 'Could not connect to OKX Wallet.\nError code: ' + code + '\nError: ' + msg);
                 }
                 setLoading('btn-connect', false, 'Connect OKX Wallet');
             }
