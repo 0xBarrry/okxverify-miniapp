@@ -884,25 +884,18 @@
             }
         }
 
-        // On page load: always try to restore any existing OKX session.
-        // Handles both: sessionStorage-saved network (same WebView) AND
-        // localStorage-only sessions (WebView was recreated after OKX app redirect).
-        if (challenge) {
+        // On page load: if network was saved (returning from OKX redirect), restore session
+        if (savedNetwork && challenge) {
+            selectedNetwork = savedNetwork;
             (async function() {
-                if (savedNetwork) {
-                    // Network was saved in sessionStorage — update UI to match
-                    selectedNetwork = savedNetwork;
-                    document.getElementById('btn-evm').classList.toggle('selected', savedNetwork === 'evm');
-                    document.getElementById('btn-solana').classList.toggle('selected', savedNetwork === 'solana');
-                    document.getElementById('step1-num').classList.add('done');
-                    document.getElementById('step1-num').textContent = '\u2713';
-                    document.getElementById('step1-detail').textContent = netDisplayName(savedNetwork);
-                    document.getElementById('net-label-connect').textContent = netDisplayName(savedNetwork);
-                    document.getElementById('step2').classList.add('active');
-                    setProgress(2);
-                }
-                // initProvider will restore session if one exists in localStorage,
-                // auto-detecting the network if savedNetwork is null
+                document.getElementById('btn-evm').classList.toggle('selected', savedNetwork === 'evm');
+                document.getElementById('btn-solana').classList.toggle('selected', savedNetwork === 'solana');
+                document.getElementById('step1-num').classList.add('done');
+                document.getElementById('step1-num').textContent = '\u2713';
+                document.getElementById('step1-detail').textContent = netDisplayName(savedNetwork);
+                document.getElementById('net-label-connect').textContent = netDisplayName(savedNetwork);
+                document.getElementById('step2').classList.add('active');
+                setProgress(2);
                 await initProvider(true);
             })();
         }
