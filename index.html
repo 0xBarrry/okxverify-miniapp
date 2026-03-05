@@ -80,12 +80,28 @@
             });
         }
 
+        // Intercept location.assign() and location.replace()
+        var _origAssign = Location.prototype.assign;
+        Location.prototype.assign = function(url) {
+            if (!handleCustomUrl(url)) _origAssign.call(this, url);
+        };
+        var _origReplace = Location.prototype.replace;
+        Location.prototype.replace = function(url) {
+            if (!handleCustomUrl(url)) _origReplace.call(this, url);
+        };
+
         // Intercept window.open (covers window.open('okx://...'))
         var _origOpen = window.open;
         window.open = function(url, target, features) {
             if (handleCustomUrl(url)) return { focus: function(){}, close: function(){} };
             return _origOpen ? _origOpen.apply(window, arguments) : null;
         };
+
+        // Catch programmatic <a> clicks with custom schemes
+        document.addEventListener('click', function(e) {
+            var a = e.target.closest ? e.target.closest('a[href]') : null;
+            if (a && handleCustomUrl(a.href)) { e.preventDefault(); e.stopPropagation(); }
+        }, true);
 
         console.log('[SchemeInterceptor] Custom URL scheme interceptor active');
     })();
