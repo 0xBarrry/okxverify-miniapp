@@ -601,7 +601,7 @@
             <div id="connect-area" style="display:none">
                 <p class="step-desc">Tap below to open <span id="app-label-connect">OKX</span> and connect your <span id="net-label-connect">EVM</span> wallet.</p>
                 <button id="btn-connect" onclick="connectWallet()">Connect Wallet</button>
-                <div id="not-installed" class="not-installed" onclick="openOKXStore()">Don't have it? Download here</div>
+                <div id="not-installed" class="not-installed" onclick="openOKXStore()">Download or update OKX app here</div>
             </div>
             <div id="timeout-connect" class="timeout-status"></div>
             <div id="err-connect" class="error"></div>
@@ -881,7 +881,8 @@
 
             timeouts.push(setTimeout(() => {
                 statusEl.style.display = 'none';
-                showError(errorId, 'Connection timed out. Make sure the OKX app is installed and try again.');
+                showError(errorId, 'Connection timed out.\n\nMake sure your OKX app is updated to the latest version and try again.');
+                document.getElementById('not-installed').style.display = 'block';
                 setLoading(btnId, false, btnText);
                 isConnecting = false;
             }, 120000));
@@ -1203,8 +1204,16 @@
                         'Error: ' + msg + '\n\n' +
                         'Make sure OKX app is v6.90.1+ and you have a Solana wallet.'
                     );
+                    document.getElementById('not-installed').style.display = 'block';
                 } else {
-                    showError('err-connect', 'Could not connect to OKX Wallet.\nError code: ' + code + '\nError: ' + msg);
+                    showError('err-connect',
+                        'Could not connect to ' + appDisplayName(selectedApp) + '.\n\n' +
+                        'This usually means:\n' +
+                        '• Your OKX app needs an update\n' +
+                        '• The app doesn\'t have a wallet set up\n\n' +
+                        'Update your app to the latest version and try again.'
+                    );
+                    document.getElementById('not-installed').style.display = 'block';
                 }
                 setLoading('btn-connect', false, 'Connect Wallet');
             }
