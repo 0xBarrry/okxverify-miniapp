@@ -387,9 +387,9 @@
             gap: 6px;
             padding: 18px 12px;
             background: var(--tg-theme-secondary-bg-color, rgba(255,255,255,0.06));
-            border: 2px solid transparent;
+            border: 2px solid var(--tg-theme-hint-color, rgba(255,255,255,0.2));
             border-radius: 12px;
-            transition: border-color 0.2s, background 0.2s;
+            transition: border-color 0.2s;
         }
         .network-btns button:hover { opacity: 0.85; }
         .network-btns button.selected {
@@ -407,23 +407,20 @@
             flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px;
             padding: 16px 10px;
             background: var(--tg-theme-secondary-bg-color, rgba(255,255,255,0.06));
-            border: 2px solid transparent; border-radius: 12px;
+            border: 2px solid var(--tg-theme-hint-color, rgba(255,255,255,0.2));
+            border-radius: 12px;
             transition: border-color 0.2s;
         }
         .app-btns button.selected { border-color: var(--tg-theme-button-color, #0088cc); }
-        .app-btns button .net-label { color: var(--tg-theme-text-color, #fff); }
-        .app-btns button .net-desc { color: var(--tg-theme-hint-color, #8a8a9a); }
+        .app-btns button .net-label { font-size: 14px; font-weight: 600; color: var(--tg-theme-text-color, #fff); }
+        .app-btns button .net-desc { font-size: 11px; color: var(--tg-theme-hint-color, #8a8a9a); }
         .app-icon {
-            width: 40px; height: 40px; border-radius: 10px;
+            width: 44px; height: 44px; border-radius: 10px;
             display: flex; align-items: center; justify-content: center;
-            font-weight: 700; font-size: 14px; color: #fff;
         }
+        .app-icon svg { width: 28px; height: 28px; }
         .app-icon-main { background: #000; }
-        .app-icon-wallet { background: #00c853; }
-        .change-app {
-            font-size: 12px; text-align: center; margin-top: -8px; margin-bottom: 10px;
-            color: var(--tg-theme-link-color, #0088cc); cursor: pointer;
-        }
+        .app-icon-wallet { background: #7DF000; }
         .not-installed {
             font-size: 12px; text-align: center; margin-top: 10px;
             color: var(--tg-theme-link-color, #0088cc); cursor: pointer;
@@ -588,12 +585,12 @@
                 <p class="step-desc">Which OKX app do you have?</p>
                 <div class="app-btns">
                     <button id="btn-app-main" onclick="selectApp('main')">
-                        <div class="app-icon app-icon-main">OKX</div>
+                        <div class="app-icon app-icon-main"><svg viewBox="13 13 125 125" fill="#fff"><path d="M40.63,42.21c0-.87.71-1.58,1.58-1.58h20.3c.87,0,1.58.71,1.58,1.58v20.3c0,.88-.71,1.59-1.58,1.59h-20.3c-.87,0-1.58-.71-1.58-1.59v-20.3Zm23.46,66.7c0,.87-.71,1.58-1.58,1.58h-20.3c-.87,0-1.58-.71-1.58-1.58v-20.3c0-.88.71-1.59,1.58-1.59h20.3c.87,0,1.58.71,1.58,1.59v20.3Zm21.86-21.62h-20.3c-.87,0-1.59-.71-1.59-1.59v-20.3c0-.87.71-1.59,1.59-1.59h20.3c.87,0,1.59.71,1.59,1.59v20.3c0,.87-.71,1.59-1.59,1.59Zm25.05,21.62c0,.87-.71,1.58-1.59,1.58h-20.3c-.87,0-1.58-.71-1.58-1.58v-20.3c0-.88.71-1.59,1.58-1.59h20.3c.87,0,1.59.71,1.59,1.59v20.3Zm0-46.41c0,.88-.71,1.59-1.59,1.59h-20.3c-.87,0-1.58-.71-1.58-1.59v-20.3c0-.87.71-1.58,1.58-1.58h20.3c.87,0,1.59.71,1.59,1.58v20.3Z"/></svg></div>
                         <span class="net-label">OKX App</span>
                         <span class="net-desc">Full exchange + wallet</span>
                     </button>
                     <button id="btn-app-wallet" onclick="selectApp('wallet')">
-                        <div class="app-icon app-icon-wallet">W</div>
+                        <div class="app-icon app-icon-wallet"><svg viewBox="13 13 125 125" fill="#fff"><path d="M40.63,42.21c0-.87.71-1.58,1.58-1.58h20.3c.87,0,1.58.71,1.58,1.58v20.3c0,.88-.71,1.59-1.58,1.59h-20.3c-.87,0-1.58-.71-1.58-1.59v-20.3Zm23.46,66.7c0,.87-.71,1.58-1.58,1.58h-20.3c-.87,0-1.58-.71-1.58-1.58v-20.3c0-.88.71-1.59,1.58-1.59h20.3c.87,0,1.58.71,1.58,1.59v20.3Zm21.86-21.62h-20.3c-.87,0-1.59-.71-1.59-1.59v-20.3c0-.87.71-1.59,1.59-1.59h20.3c.87,0,1.59.71,1.59,1.59v20.3c0,.87-.71,1.59-1.59,1.59Zm25.05,21.62c0,.87-.71,1.58-1.59,1.58h-20.3c-.87,0-1.58-.71-1.58-1.58v-20.3c0-.88.71-1.59,1.58-1.59h20.3c.87,0,1.59.71,1.59,1.59v20.3Zm0-46.41c0,.88-.71,1.59-1.59,1.59h-20.3c-.87,0-1.58-.71-1.58-1.59v-20.3c0-.87.71-1.58,1.58-1.58h20.3c.87,0,1.59.71,1.59,1.58v20.3Z"/></svg></div>
                         <span class="net-label">OKX Wallet</span>
                         <span class="net-desc">Standalone wallet</span>
                     </button>
@@ -603,7 +600,6 @@
             <!-- Connect area (shown after app is selected) -->
             <div id="connect-area" style="display:none">
                 <p class="step-desc">Tap below to open <span id="app-label-connect">OKX</span> and connect your <span id="net-label-connect">EVM</span> wallet.</p>
-                <div id="change-app" class="change-app" onclick="changeApp()">Change app</div>
                 <button id="btn-connect" onclick="connectWallet()">Connect Wallet</button>
                 <div id="not-installed" class="not-installed" onclick="openOKXStore()">Don't have it? Download here</div>
             </div>
@@ -831,16 +827,6 @@
             document.getElementById('connect-area').style.display = 'block';
             document.getElementById('app-label-connect').textContent = appDisplayName(app);
             document.getElementById('step2-detail').textContent = appDisplayName(app);
-        }
-
-        function changeApp() {
-            selectedApp = null;
-            try { localStorage.removeItem('okx_app_choice'); } catch(e) {}
-            document.getElementById('app-selector').style.display = 'block';
-            document.getElementById('connect-area').style.display = 'none';
-            document.getElementById('step2-detail').textContent = '';
-            document.getElementById('btn-app-main').classList.remove('selected');
-            document.getElementById('btn-app-wallet').classList.remove('selected');
         }
 
         function openOKXStore() {
