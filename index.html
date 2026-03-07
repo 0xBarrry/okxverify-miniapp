@@ -873,19 +873,29 @@
             timeouts.push(setTimeout(() => {
                 statusEl.textContent = 'Waiting for OKX app response...';
                 statusEl.style.display = 'block';
-            }, 30000));
+            }, 8000));
 
             timeouts.push(setTimeout(() => {
-                statusEl.textContent = 'Still waiting — make sure OKX app is open and check for a popup there.';
-            }, 60000));
+                statusEl.innerHTML =
+                    'Still waiting...<br><br>' +
+                    '<b>Not working?</b><br>' +
+                    '• Make sure your OKX app is <b>up to date</b><br>' +
+                    '• Check that you have a <b>wallet created</b> in the app<br>' +
+                    '• If OKX shows "connection unsuccessful" — update the app';
+                document.getElementById('not-installed').style.display = 'block';
+            }, 20000));
 
             timeouts.push(setTimeout(() => {
                 statusEl.style.display = 'none';
-                showError(errorId, 'Connection timed out.\n\nMake sure your OKX app is updated to the latest version and try again.');
+                showError(errorId,
+                    'Connection timed out.\n\n' +
+                    'This usually means your OKX app is outdated or doesn\'t have a wallet set up.\n\n' +
+                    'Update OKX to the latest version and try again.'
+                );
                 document.getElementById('not-installed').style.display = 'block';
                 setLoading(btnId, false, btnText);
                 isConnecting = false;
-            }, 120000));
+            }, 60000));
 
             return timeouts;
         }
