@@ -822,8 +822,7 @@
             document.getElementById('btn-app-main').classList.toggle('selected', app === 'main');
             document.getElementById('btn-app-wallet').classList.toggle('selected', app === 'wallet');
 
-            // Show connect area, hide app selector
-            document.getElementById('app-selector').style.display = 'none';
+            // Show connect area (keep app selector visible so user can switch)
             document.getElementById('connect-area').style.display = 'block';
             document.getElementById('app-label-connect').textContent = appDisplayName(app);
             document.getElementById('step2-detail').textContent = appDisplayName(app);
