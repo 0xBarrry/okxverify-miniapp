@@ -11,10 +11,11 @@
     var IS_IOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
     var PLATFORM = IS_ANDROID ? 'android' : IS_IOS ? 'ios' : 'mobile';
 
-    // Safety net: if SDK somehow still calls openTelegramLink → OKX_WALLET_BOT
-    // (even though TelegramWebviewProxy is deleted), intercept and redirect
-    // to proper HTTPS deep link via tg.openLink(). This is a backup — primary
-    // path is now patchCustomSchemeNavigation (non-TMA mode, okx:// interceptor).
+    // PRIMARY handler for TMA mode: OKX SDK calls openTelegramLink → OKX_WALLET_BOT
+    // (defunct since Sep 2025). This interceptor converts those calls to proper
+    // HTTPS deep links via tg.openLink(). TelegramWebviewProxy is KEPT (not deleted)
+    // because the SDK uses window.open (interceptable) in TMA mode vs location.href
+    // (NOT interceptable on Android due to Chromium configurable:false) in non-TMA mode.
     (function() {
         function patchOKXTelegramLink() {
             if (!window.Telegram || !window.Telegram.WebApp || !window.Telegram.WebApp.openTelegramLink) return;
@@ -138,13 +139,22 @@
         }
 
         // Intercept Location.prototype.href setter (covers window.location.href = 'okx://...')
-        var locDesc = Object.getOwnPropertyDescriptor(Location.prototype, 'href');
-        if (locDesc && locDesc.set) {
-            Object.defineProperty(Location.prototype, 'href', {
-                get: locDesc.get,
-                set: function(url) { if (!handleCustomUrl(url)) locDesc.set.call(this, url); },
-                configurable: true
-            });
+        // NOTE: In Chromium WebView, Location.prototype.href has configurable:false —
+        // Object.defineProperty will throw TypeError. Wrapped in try-catch so the remaining
+        // interceptors (assign, replace, window.open, iframe) still get installed.
+        try {
+            var locDesc = Object.getOwnPropertyDescriptor(Location.prototype, 'href');
+            if (locDesc && locDesc.set) {
+                Object.defineProperty(Location.prototype, 'href', {
+                    get: locDesc.get,
+                    set: function(url) { if (!handleCustomUrl(url)) locDesc.set.call(this, url); },
+                    configurable: true
+                });
+                console.log('[SchemeInterceptor] Location.prototype.href override installed');
+            }
+        } catch (e) {
+            console.warn('[SchemeInterceptor] Location.prototype.href override FAILED (configurable:false) — other interceptors still active');
+            if (window._dbg) window._dbg('href override failed: ' + e.message);
         }
 
         // Intercept location.assign() and location.replace()
@@ -581,14 +591,14 @@
         tg.ready();
         tg.expand();
 
-        // Non-TMA mode for ALL platforms:
-        // OKX_WALLET_BOT is defunct since Sep 2025 — TMA mode causes silent failures
-        // because SDK tries openTelegramLink → OKX_WALLET_BOT which no longer works.
-        // Fix: delete TelegramWebviewProxy → forces non-TMA → SDK navigates okx://
-        // → patchCustomSchemeNavigation converts to platform-specific HTTPS deep links:
-        //   Android: https://www.okx.com/download?deep_link=okx%3A%2F%2F... (App Links)
-        //   iOS:     https://web3.okx.com/ul/v1/wc?uri=... (Universal Links)
-        try { delete window.TelegramWebviewProxy; } catch (_) {}
+        // KEEP TelegramWebviewProxy (TMA mode) — DO NOT DELETE!
+        // OKX SDK v1.9.1 on Android: when TelegramWebviewProxy exists (TMA mode),
+        // SDK uses window.open() for deep links (interceptable ✓).
+        // When deleted (non-TMA), SDK falls back to location.href = 'okx://...'
+        // which fails on Android WebView (Location.prototype.href has configurable:false
+        // in Chromium → Object.defineProperty throws → interceptor chain breaks entirely).
+        // patchOKXTelegramLink() in <head> handles the defunct OKX_WALLET_BOT by
+        // converting openTelegramLink calls to HTTPS deep links via tg.openLink().
 
         /* --- Desktop detection --- */
         function isMobile() {
