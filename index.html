@@ -599,7 +599,6 @@
 
             <!-- Connect area (shown after app is selected) -->
             <div id="connect-area" style="display:none">
-                <p class="step-desc">Tap below to open <span id="app-label-connect">OKX</span> and connect your <span id="net-label-connect">EVM</span> wallet.</p>
                 <button id="btn-connect" onclick="connectWallet()">Connect Wallet</button>
                 <div id="not-installed" class="not-installed" onclick="openOKXStore()">Download or update OKX app here</div>
             </div>
@@ -685,8 +684,7 @@
         const params = new URLSearchParams(window.location.search);
 
         /* --- Debug mode --- */
-        // Temporarily force-enabled on Android so we can see relay/WC logs
-        const DEBUG = params.get('debug') === '1' || IS_ANDROID;
+        const DEBUG = params.get('debug') === '1';
         function dbg(msg) {
             if (!DEBUG) return;
             const panel = document.getElementById('debug-panel');
@@ -824,7 +822,6 @@
 
             // Show connect area (keep app selector visible so user can switch)
             document.getElementById('connect-area').style.display = 'block';
-            document.getElementById('app-label-connect').textContent = appDisplayName(app);
             document.getElementById('step2-detail').textContent = appDisplayName(app);
         }
 
@@ -962,8 +959,6 @@
             const netName = netDisplayName(net);
             document.getElementById('step1-detail').textContent = netName;
 
-            // Update step 2 labels
-            document.getElementById('net-label-connect').textContent = netName;
             document.getElementById('step2').classList.add('active');
 
             // If app was saved in localStorage, auto-select and skip to connect
@@ -1107,7 +1102,6 @@
                 document.getElementById('step1-num').classList.add('done');
                 document.getElementById('step1-num').textContent = '\u2713';
                 document.getElementById('step1-detail').textContent = netDisplayName(savedNetwork);
-                document.getElementById('net-label-connect').textContent = netDisplayName(savedNetwork);
                 document.getElementById('step2').classList.add('active');
                 // Restore app selection from localStorage
                 if (selectedApp) selectApp(selectedApp);
