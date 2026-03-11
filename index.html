@@ -132,22 +132,29 @@
                     ? scheme + '://ul/v1/wc?uri=' + encodeURIComponent(wcUri)
                     : url;
                 if (IS_ANDROID && isWalletApp) {
-                    // Android + OKX Wallet: use intent:// with package name
-                    // web3.okx.com has no App Links — must target package directly
-                    var intentUrl = 'intent://ul/v1/wc?uri=' + encodeURIComponent(wcUri || url)
-                        + '#Intent'
-                        + ';scheme=okxwallet'
-                        + ';package=com.okx.wallet'
-                        + ';S.browser_fallback_url=' + encodeURIComponent('https://play.google.com/store/apps/details?id=com.okx.wallet')
-                        + ';end';
-                    console.log('[SchemeInterceptor] → intent (OKX Wallet):', intentUrl.substring(0, 100));
-                    if (window._dbg) window._dbg('intent: ' + intentUrl.substring(0, 80));
-                    // Telegram openLink doesn't support intent:// — use iframe
-                    var iframe = document.createElement('iframe');
-                    iframe.style.display = 'none';
-                    iframe.src = intentUrl;
-                    document.body.appendChild(iframe);
-                    setTimeout(function() { iframe.remove(); }, 3000);
+                    // Android + OKX Wallet: direct scheme launch
+                    // web3.okx.com has no App Links — use okxwallet:// directly
+                    var walletSchemeUrl = 'okxwallet://ul/v1/wc?uri=' + encodeURIComponent(wcUri || url);
+                    console.log('[SchemeInterceptor] → okxwallet scheme:', walletSchemeUrl.substring(0, 100));
+                    if (window._dbg) window._dbg('okxwallet://: ' + walletSchemeUrl.substring(0, 80));
+                    // Try multiple methods — Telegram WebView is restrictive
+                    // Method 1: window.location (most reliable for custom schemes)
+                    try { window.location.href = walletSchemeUrl; } catch(e1) {
+                        console.log('[SchemeInterceptor] location.href failed:', e1.message);
+                    }
+                    // Method 2: hidden anchor click (fallback)
+                    setTimeout(function() {
+                        try {
+                            var a = document.createElement('a');
+                            a.href = walletSchemeUrl;
+                            a.style.display = 'none';
+                            document.body.appendChild(a);
+                            a.click();
+                            setTimeout(function() { a.remove(); }, 1000);
+                        } catch(e2) {
+                            console.log('[SchemeInterceptor] anchor click failed:', e2.message);
+                        }
+                    }, 500);
                 } else if (IS_ANDROID) {
                     // Android + OKX App: App Links on www.okx.com work
                     openUrl = 'https://www.okx.com/download?deep_link=' + encodeURIComponent(deepLink);
