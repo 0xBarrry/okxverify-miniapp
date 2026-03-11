@@ -131,33 +131,14 @@
                 var deepLink = wcUri
                     ? scheme + '://ul/v1/wc?uri=' + encodeURIComponent(wcUri)
                     : url;
-                if (IS_ANDROID && isWalletApp) {
-                    // Android + OKX Wallet: direct scheme launch
-                    // web3.okx.com has no App Links — use okxwallet:// directly
-                    var walletSchemeUrl = 'okxwallet://ul/v1/wc?uri=' + encodeURIComponent(wcUri || url);
-                    console.log('[SchemeInterceptor] → okxwallet scheme:', walletSchemeUrl.substring(0, 100));
-                    if (window._dbg) window._dbg('okxwallet://: ' + walletSchemeUrl.substring(0, 80));
-                    // Try multiple methods — Telegram WebView is restrictive
-                    // Method 1: window.location (most reliable for custom schemes)
-                    try { window.location.href = walletSchemeUrl; } catch(e1) {
-                        console.log('[SchemeInterceptor] location.href failed:', e1.message);
+                if (IS_ANDROID) {
+                    // Android: OKX Wallet standalone has no App Links
+                    // Both choices route through OKX App (okx:// + www.okx.com)
+                    if (isWalletApp) {
+                        console.log('[SchemeInterceptor] Android: OKX Wallet not supported, using OKX App');
                     }
-                    // Method 2: hidden anchor click (fallback)
-                    setTimeout(function() {
-                        try {
-                            var a = document.createElement('a');
-                            a.href = walletSchemeUrl;
-                            a.style.display = 'none';
-                            document.body.appendChild(a);
-                            a.click();
-                            setTimeout(function() { a.remove(); }, 1000);
-                        } catch(e2) {
-                            console.log('[SchemeInterceptor] anchor click failed:', e2.message);
-                        }
-                    }, 500);
-                } else if (IS_ANDROID) {
-                    // Android + OKX App: App Links on www.okx.com work
-                    openUrl = 'https://www.okx.com/download?deep_link=' + encodeURIComponent(deepLink);
+                    var appDeepLink = 'okx://ul/v1/wc?uri=' + encodeURIComponent(wcUri || url);
+                    openUrl = 'https://www.okx.com/download?deep_link=' + encodeURIComponent(appDeepLink);
                     console.log('[SchemeInterceptor] → tg.openLink:', openUrl.substring(0, 100));
                     if (window._dbg) window._dbg('tg.openLink: ' + openUrl.substring(0, 80));
                     window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
@@ -994,6 +975,15 @@
             document.getElementById('step1-detail').textContent = netName;
 
             document.getElementById('step2').classList.add('active');
+
+            // Android: OKX Wallet standalone has no deep link support
+            // Force OKX App and hide wallet button
+            if (IS_ANDROID) {
+                selectedApp = 'main';
+                document.getElementById('btn-app-wallet').style.display = 'none';
+                document.getElementById('app-selector').querySelector('.step-desc').textContent =
+                    'Connect via OKX App';
+            }
 
             // If app was saved in localStorage, auto-select and skip to connect
             if (selectedApp) {
