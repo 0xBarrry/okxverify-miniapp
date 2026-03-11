@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Opening OKX Wallet...</title>
+<title>Opening OKX...</title>
 <style>
 body{background:#1a1a2e;color:#fff;font-family:-apple-system,sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;margin:0;text-align:center}
 .box{padding:20px}
@@ -16,35 +16,56 @@ p{color:#aaa;font-size:14px;margin-top:16px}
 <body>
 <div class="box">
     <div class="spinner"></div>
-    <div id="status">Opening OKX Wallet...</div>
+    <div id="status">Opening OKX...</div>
     <p id="fallback" style="display:none">
-        <a id="direct-link" href="#">Tap here if OKX Wallet didn't open</a>
+        <a id="direct-link" href="#">Tap here to try again</a>
         <br><br>
-        <a href="https://play.google.com/store/apps/details?id=com.okx.wallet">Download OKX Wallet</a>
+        <a id="store-link" href="#">Download app</a>
     </p>
 </div>
 <script>
 (function() {
     var params = new URLSearchParams(window.location.search);
     var uri = params.get('uri') || '';
-    var scheme = params.get('scheme') || 'okxwallet';
+    var app = params.get('app') || 'wallet';
 
     if (!uri) {
         document.getElementById('status').textContent = 'Error: missing URI parameter';
         return;
     }
 
-    var deepLink = scheme + '://ul/v1/wc?uri=' + encodeURIComponent(uri);
+    // App config: package name, scheme, store link
+    var apps = {
+        wallet: {
+            pkg: 'com.okx.wallet',
+            scheme: 'okxwallet',
+            store: 'https://play.google.com/store/apps/details?id=com.okx.wallet'
+        },
+        okx: {
+            pkg: 'com.okinc.okex.gp',
+            scheme: 'okx',
+            store: 'https://play.google.com/store/apps/details?id=com.okinc.okex.gp'
+        }
+    };
 
-    // Set direct link for manual tap
-    document.getElementById('direct-link').href = deepLink;
+    var cfg = apps[app] || apps.wallet;
 
-    // Auto-redirect via location.href (works in Chrome for custom schemes)
-    window.location.href = deepLink;
+    // Android intent:// URI — Chrome opens app by package name, no App Links needed
+    var intentUrl = 'intent://ul/v1/wc?uri=' + encodeURIComponent(uri)
+        + '#Intent;scheme=' + cfg.scheme
+        + ';package=' + cfg.pkg
+        + ';end';
 
-    // Show fallback after 2s if still on this page
+    // Set fallback links
+    document.getElementById('direct-link').href = intentUrl;
+    document.getElementById('store-link').href = cfg.store;
+
+    // Auto-redirect
+    window.location.href = intentUrl;
+
+    // Show fallback after 2s
     setTimeout(function() {
-        document.getElementById('status').textContent = 'OKX Wallet not responding';
+        document.getElementById('status').textContent = 'App not responding';
         document.getElementById('fallback').style.display = 'block';
     }, 2000);
 })();

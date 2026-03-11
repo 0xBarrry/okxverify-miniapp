@@ -131,18 +131,25 @@
                 var deepLink = wcUri
                     ? scheme + '://ul/v1/wc?uri=' + encodeURIComponent(wcUri)
                     : url;
-                // App Links (Android) / Universal Links (iOS)
-                // OKX Wallet (green): web3.okx.com → com.okx.wallet
-                // OKX App (black): www.okx.com → com.okinc.okex
-                var domain = isWalletApp ? 'web3.okx.com' : 'www.okx.com';
-                if (wcUri) {
-                    openUrl = 'https://' + domain + '/ul/v1/wc?uri=' + encodeURIComponent(wcUri);
+                if (IS_ANDROID) {
+                    // Android: intent:// via redirect.html (Chrome handles intent URIs by package name)
+                    var appType = isWalletApp ? 'wallet' : 'okx';
+                    var wcParam = wcUri || url;
+                    var redirectBase = window.location.href.replace(/\/[^/]*$/, '/redirect.html');
+                    openUrl = redirectBase + '?app=' + appType + '&uri=' + encodeURIComponent(wcParam);
+                    console.log('[SchemeInterceptor] → redirect (Android, ' + appType + ')');
+                    if (window._dbg) window._dbg('redirect: ' + appType);
+                    window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
                 } else {
-                    openUrl = 'https://' + domain + '/ul/connect?uri=' + encodeURIComponent(url);
+                    // iOS: Universal Links (domain determines which app opens)
+                    var domain = isWalletApp ? 'web3.okx.com' : 'www.okx.com';
+                    openUrl = wcUri
+                        ? 'https://' + domain + '/ul/v1/wc?uri=' + encodeURIComponent(wcUri)
+                        : 'https://' + domain + '/ul/connect?uri=' + encodeURIComponent(url);
+                    console.log('[SchemeInterceptor] → universal link (iOS, ' + domain + ')');
+                    if (window._dbg) window._dbg('UL: ' + domain);
+                    window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
                 }
-                console.log('[SchemeInterceptor] → openLink (' + domain + '):', openUrl.substring(0, 100));
-                if (window._dbg) window._dbg('openLink: ' + openUrl.substring(0, 80));
-                window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
             } catch (e) {
                 console.error('[SchemeInterceptor] openLink failed:', e.message);
                 if (window._dbg) window._dbg('openLink error: ' + e.message);
