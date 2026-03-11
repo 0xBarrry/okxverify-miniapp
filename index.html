@@ -136,11 +136,14 @@
                         ? 'https://web3.okx.com/download?deeplink=' + encodeURIComponent(deepLink)
                         : 'https://www.okx.com/download?deep_link=' + encodeURIComponent(deepLink);
                 } else if (wcUri) {
+                    // iOS: use universal links (domain determines which app opens)
                     openUrl = isWalletApp
                         ? 'https://web3.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUri)
-                        : 'https://www.okx.com/download?deep_link=' + encodeURIComponent(deepLink);
+                        : 'https://www.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUri);
                 } else {
-                    openUrl = 'https://web3.okx.com/ul/connect?uri=' + encodeURIComponent(url);
+                    openUrl = isWalletApp
+                        ? 'https://web3.okx.com/ul/connect?uri=' + encodeURIComponent(url)
+                        : 'https://www.okx.com/ul/connect?uri=' + encodeURIComponent(url);
                 }
                 console.log('[SchemeInterceptor] → tg.openLink:', openUrl.substring(0, 100));
                 if (window._dbg) window._dbg('tg.openLink: ' + openUrl.substring(0, 80));
