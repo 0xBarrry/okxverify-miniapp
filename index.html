@@ -131,37 +131,18 @@
                 var deepLink = wcUri
                     ? scheme + '://ul/v1/wc?uri=' + encodeURIComponent(wcUri)
                     : url;
-                if (IS_ANDROID && isWalletApp) {
-                    // Android + OKX Wallet: Telegram WebView can't handle okxwallet://
-                    // Open redirect.html in Chrome via openLink — Chrome handles custom schemes
-                    var redirectBase = window.location.href.replace(/\/[^/]*$/, '/redirect.html');
-                    openUrl = redirectBase + '?scheme=okxwallet&uri=' + encodeURIComponent(wcUri || url);
-                    console.log('[SchemeInterceptor] → redirect (OKX Wallet):', openUrl.substring(0, 120));
-                    if (window._dbg) window._dbg('redirect: ' + openUrl.substring(0, 80));
-                    window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
-                } else if (IS_ANDROID) {
-                    // Android + OKX App: App Links on www.okx.com work
-                    var appDeepLink = 'okx://ul/v1/wc?uri=' + encodeURIComponent(wcUri || url);
-                    openUrl = 'https://www.okx.com/download?deep_link=' + encodeURIComponent(appDeepLink);
-                    console.log('[SchemeInterceptor] → tg.openLink:', openUrl.substring(0, 100));
-                    if (window._dbg) window._dbg('tg.openLink: ' + openUrl.substring(0, 80));
-                    window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
-                } else if (wcUri) {
-                    // iOS: universal links (domain determines which app opens)
-                    openUrl = isWalletApp
-                        ? 'https://web3.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUri)
-                        : 'https://www.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUri);
-                    console.log('[SchemeInterceptor] → tg.openLink:', openUrl.substring(0, 100));
-                    if (window._dbg) window._dbg('tg.openLink: ' + openUrl.substring(0, 80));
-                    window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
+                // App Links (Android) / Universal Links (iOS)
+                // OKX Wallet (green): web3.okx.com → com.okx.wallet
+                // OKX App (black): www.okx.com → com.okinc.okex
+                var domain = isWalletApp ? 'web3.okx.com' : 'www.okx.com';
+                if (wcUri) {
+                    openUrl = 'https://' + domain + '/ul/v1/wc?uri=' + encodeURIComponent(wcUri);
                 } else {
-                    openUrl = isWalletApp
-                        ? 'https://web3.okx.com/ul/connect?uri=' + encodeURIComponent(url)
-                        : 'https://www.okx.com/ul/connect?uri=' + encodeURIComponent(url);
-                    console.log('[SchemeInterceptor] → tg.openLink:', openUrl.substring(0, 100));
-                    if (window._dbg) window._dbg('tg.openLink: ' + openUrl.substring(0, 80));
-                    window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
+                    openUrl = 'https://' + domain + '/ul/connect?uri=' + encodeURIComponent(url);
                 }
+                console.log('[SchemeInterceptor] → openLink (' + domain + '):', openUrl.substring(0, 100));
+                if (window._dbg) window._dbg('openLink: ' + openUrl.substring(0, 80));
+                window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
             } catch (e) {
                 console.error('[SchemeInterceptor] openLink failed:', e.message);
                 if (window._dbg) window._dbg('openLink error: ' + e.message);
