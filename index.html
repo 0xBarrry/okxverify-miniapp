@@ -66,13 +66,14 @@
                         var isWalletApp = (selectedApp === 'wallet');
                         var wcUriForLink = wcUri || (topic.indexOf('wc:') === 0 ? topic : null);
                         var mobileUrl;
+                        var scheme = isWalletApp ? 'okxwallet' : 'okx';
                         if (wcUriForLink) {
-                            var deepLink = 'okx://ul/v1/wc?uri=' + encodeURIComponent(wcUriForLink);
+                            var deepLink = scheme + '://ul/v1/wc?uri=' + encodeURIComponent(wcUriForLink);
                             mobileUrl = isWalletApp
                                 ? 'https://web3.okx.com/download?deeplink=' + encodeURIComponent(deepLink)
                                 : 'https://www.okx.com/download?deep_link=' + encodeURIComponent(deepLink);
                         } else {
-                            var deepLinkFallback = 'okx://ul/connect?topic=' + encodeURIComponent(topic);
+                            var deepLinkFallback = scheme + '://ul/connect?topic=' + encodeURIComponent(topic);
                             mobileUrl = isWalletApp
                                 ? 'https://web3.okx.com/download?deeplink=' + encodeURIComponent(deepLinkFallback)
                                 : 'https://www.okx.com/download?deep_link=' + encodeURIComponent(deepLinkFallback);
@@ -126,8 +127,9 @@
                 // Main OKX App (black): www.okx.com/download?deep_link=...
                 // OKX Wallet (green): web3.okx.com/download?deeplink=...
                 var isWalletApp = (selectedApp === 'wallet');
+                var scheme = isWalletApp ? 'okxwallet' : 'okx';
                 var deepLink = wcUri
-                    ? 'okx://ul/v1/wc?uri=' + encodeURIComponent(wcUri)
+                    ? scheme + '://ul/v1/wc?uri=' + encodeURIComponent(wcUri)
                     : url;
                 if (IS_ANDROID) {
                     openUrl = isWalletApp
