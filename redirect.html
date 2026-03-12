@@ -75,7 +75,7 @@ p{color:#aaa;font-size:14px;margin-top:16px}
         try { dlParsed = new URL(deepLink); } catch(e) { dlParsed = null; }
         var intentUrl;
         if (dlParsed) {
-            intentUrl = 'intent:/' + dlParsed.pathname + dlParsed.search
+            intentUrl = 'intent://' + dlParsed.host + dlParsed.pathname + dlParsed.search
                 + '#Intent;scheme=' + cfg.scheme
                 + ';package=' + cfg.pkg
                 + ';end';
