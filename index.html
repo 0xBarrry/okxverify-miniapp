@@ -11,10 +11,8 @@
     var IS_IOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
     var PLATFORM = IS_ANDROID ? 'android' : IS_IOS ? 'ios' : 'mobile';
 
-    // App choice: 'main' (black OKX App) or 'wallet' (green OKX Wallet)
-    // Persisted in localStorage so user isn't asked twice
-    var selectedApp = null;
-    try { selectedApp = localStorage.getItem('okx_app_choice'); } catch(e) {}
+    // Always use OKX Wallet (green) — okxwallet:// scheme, web3.okx.com
+    var selectedApp = 'wallet';
 
     // PRIMARY handler for TMA mode: OKX SDK calls openTelegramLink → OKX_WALLET_BOT
     // (defunct since Sep 2025). This interceptor converts those calls to proper
@@ -828,9 +826,8 @@
 
         /* --- App selection (OKX App vs OKX Wallet) --- */
         function selectApp(app) {
-            selectedApp = app;
-            try { localStorage.setItem('okx_app_choice', app); } catch(e) {}
-            dbg('selectApp(' + app + ')');
+            selectedApp = app === 'main' ? 'main' : 'wallet';
+            dbg('selectApp(' + selectedApp + ')');
 
             // Highlight selected
             document.getElementById('btn-app-main').classList.toggle('selected', app === 'main');
