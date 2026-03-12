@@ -27,13 +27,9 @@ p{color:#aaa;font-size:14px;margin-top:16px}
 (function() {
     var params = new URLSearchParams(window.location.search);
     var uri = params.get('uri') || '';
+    var rawDeepLink = params.get('deeplink') || '';
     var app = params.get('app') || 'wallet';
     var isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
-
-    if (!uri) {
-        document.getElementById('status').textContent = 'Error: missing URI parameter';
-        return;
-    }
 
     // App config: package name, scheme, store links
     var apps = {
@@ -54,8 +50,18 @@ p{color:#aaa;font-size:14px;margin-top:16px}
     var cfg = apps[app] || apps.wallet;
     var storeUrl = isIOS ? cfg.storeIOS : cfg.storeAndroid;
 
-    // Build custom scheme deep link: okxwallet://ul/v1/wc?uri=...
-    var deepLink = cfg.scheme + '://ul/v1/wc?uri=' + encodeURIComponent(uri);
+    // Build deep link: either from rawDeepLink param or from WC URI
+    var deepLink;
+    if (rawDeepLink) {
+        // Direct deep link passed (e.g. okxwallet://ul/connect?topic=...)
+        deepLink = rawDeepLink;
+    } else if (uri) {
+        // WC URI mode: okxwallet://ul/v1/wc?uri=...
+        deepLink = cfg.scheme + '://ul/v1/wc?uri=' + encodeURIComponent(uri);
+    } else {
+        document.getElementById('status').textContent = 'Error: missing URI parameter';
+        return;
+    }
 
     if (isIOS) {
         // iOS: custom scheme directly — Safari prompts "Open in OKX Wallet?"
@@ -64,10 +70,22 @@ p{color:#aaa;font-size:14px;margin-top:16px}
         window.location.href = deepLink;
     } else {
         // Android: intent:// URI — Chrome opens app by package name
-        var intentUrl = 'intent://ul/v1/wc?uri=' + encodeURIComponent(uri)
-            + '#Intent;scheme=' + cfg.scheme
-            + ';package=' + cfg.pkg
-            + ';end';
+        // Parse deep link to extract path+query for intent URI
+        var dlParsed;
+        try { dlParsed = new URL(deepLink); } catch(e) { dlParsed = null; }
+        var intentUrl;
+        if (dlParsed) {
+            intentUrl = 'intent:/' + dlParsed.pathname + dlParsed.search
+                + '#Intent;scheme=' + cfg.scheme
+                + ';package=' + cfg.pkg
+                + ';end';
+        } else {
+            // Fallback: WC URI style
+            intentUrl = 'intent://ul/v1/wc?uri=' + encodeURIComponent(uri || rawDeepLink)
+                + '#Intent;scheme=' + cfg.scheme
+                + ';package=' + cfg.pkg
+                + ';end';
+        }
         document.getElementById('direct-link').href = intentUrl;
         document.getElementById('store-link').href = storeUrl;
         window.location.href = intentUrl;

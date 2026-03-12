@@ -124,6 +124,24 @@
             if (!url || typeof url !== 'string') return false;
             var scheme;
             try { scheme = new URL(url).protocol; } catch (e) { return false; }
+            // Allow web3.okx.com HTTPS URLs through when wallet mode — they're Universal Links
+            // that open the MAIN OKX app. We need to intercept and redirect to OKX Wallet.
+            if (scheme === 'https:' && selectedApp !== 'main' && url.indexOf('web3.okx.com') !== -1) {
+                console.log('[SchemeInterceptor] web3.okx.com HTTPS intercepted → wallet redirect');
+                if (window._dbg) window._dbg('web3.okx.com → wallet redirect');
+                try {
+                    var parsed2 = new URL(url);
+                    var walletDL = 'okxwallet:/' + parsed2.pathname + parsed2.search;
+                    var rBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
+                    var rUrl = rBase + '?app=wallet&deeplink=' + encodeURIComponent(walletDL);
+                    window.Telegram.WebApp.openLink(rUrl, { try_instant_view: false });
+                } catch(e3) {
+                    console.error('[SchemeInterceptor] web3.okx.com redirect failed:', e3.message);
+                    if (window._dbg) window._dbg('redirect error: ' + e3.message);
+                    return false;
+                }
+                return true;
+            }
             if (scheme === 'http:' || scheme === 'https:' || scheme === 'javascript:' || scheme === 'tg:') return false;
             console.log('[SchemeInterceptor] Custom scheme caught:', scheme, url.substring(0, 120));
             if (window._dbg) window._dbg('scheme=' + scheme + ' ' + url.substring(0, 80));
@@ -216,9 +234,32 @@
             // Intercept t.me/OKX_WALLET_BOT links (SDK may use window.open instead of openTelegramLink)
             if (typeof url === 'string' && url.indexOf('OKX_WALLET_BOT') !== -1) {
                 if (window._dbg) window._dbg('[window.open] OKX_WALLET_BOT detected → routing to interceptor');
-                // Re-use the same TMA interceptor logic via openTelegramLink patch
                 try { window.Telegram.WebApp.openTelegramLink(url); } catch(e) {
                     if (window._dbg) window._dbg('[window.open] fallback error: ' + e.message);
+                }
+                return { focus: function(){}, close: function(){} };
+            }
+            // Intercept web3.okx.com Universal Links when wallet mode selected.
+            // SDK uses window.open('https://web3.okx.com/ul/connect?topic=...') in non-TMA mode.
+            // web3.okx.com Universal Link opens MAIN OKX app (black) — we need OKX Wallet (green).
+            // Convert to okxwallet:// custom scheme via redirect.html.
+            if (typeof url === 'string' && selectedApp !== 'main' && url.indexOf('web3.okx.com') !== -1) {
+                console.log('[window.open] web3.okx.com intercepted → redirect to OKX Wallet');
+                if (window._dbg) window._dbg('[window.open] web3.okx.com → OKX Wallet redirect');
+                try {
+                    // Convert https://web3.okx.com/ul/connect?topic=X → okxwallet://ul/connect?topic=X
+                    var parsed = new URL(url);
+                    var walletDeepLink = 'okxwallet:/' + parsed.pathname + parsed.search;
+                    var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
+                    var redirectUrl = redirectBase + '?app=wallet&deeplink=' + encodeURIComponent(walletDeepLink);
+                    console.log('[window.open] walletDeepLink:', walletDeepLink);
+                    if (window._dbg) window._dbg('deeplink: ' + walletDeepLink.substring(0, 80));
+                    window.Telegram.WebApp.openLink(redirectUrl, { try_instant_view: false });
+                } catch(e) {
+                    console.error('[window.open] web3.okx.com redirect failed:', e.message);
+                    if (window._dbg) window._dbg('redirect error: ' + e.message);
+                    // Fallback: open original URL
+                    if (_origOpen) _origOpen.apply(window, arguments);
                 }
                 return { focus: function(){}, close: function(){} };
             }
