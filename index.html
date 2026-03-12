@@ -276,59 +276,92 @@
                     var parsed = new URL(url);
                     var topic = parsed.searchParams.get('topic') || '';
 
-                    // Dump ALL localStorage keys to debug — need to find where SDK stores symKey
+                    // Extract symKey from provider internals or localStorage
                     var symKey = null;
+
+                    // Strategy 1: provider._core.crypto.keychain (WC v2 internal)
                     try {
-                        if (window._dbg) window._dbg('localStorage keys (' + localStorage.length + '):');
-                        for (var si = 0; si < localStorage.length; si++) {
-                            var sKey = localStorage.key(si);
-                            if (!sKey) continue;
-                            var sVal = localStorage.getItem(sKey) || '';
-                            // Show key + first 120 chars of value
-                            if (window._dbg) window._dbg('  [' + sKey + '] = ' + sVal.substring(0, 120));
-
-                            // Strategy 1: symKey in same object as topic
-                            if (sVal.indexOf(topic) !== -1) {
-                                try {
-                                    var sData = JSON.parse(sVal);
-                                    var items = Array.isArray(sData) ? sData : [sData];
-                                    for (var pi = 0; pi < items.length; pi++) {
-                                        var p = items[pi];
-                                        if (p && p.topic === topic && p.symKey) { symKey = p.symKey; break; }
+                        var prov = window._okxProvider || provider;
+                        if (prov) {
+                            // Dump provider top-level keys
+                            var provKeys = Object.keys(prov).join(', ');
+                            if (window._dbg) window._dbg('provider keys: ' + provKeys);
+                            // Try known WC v2 paths to keychain
+                            var core = prov.core || prov._core || (prov.signClient && prov.signClient.core);
+                            if (core) {
+                                if (window._dbg) window._dbg('core keys: ' + Object.keys(core).join(', '));
+                                var crypto = core.crypto;
+                                if (crypto && crypto.keychain) {
+                                    var kc = crypto.keychain;
+                                    if (window._dbg) window._dbg('keychain keys: ' + Object.keys(kc).join(', '));
+                                    // keychain.get(topic) or keychain.keychain map
+                                    if (typeof kc.get === 'function') {
+                                        try { symKey = kc.get(topic); } catch(kg) {}
                                     }
-                                } catch(pe) {}
-                            }
-
-                            // Strategy 2: WC keychain — stores {topic: symKey} mapping
-                            if (!symKey && sKey.indexOf('keychain') !== -1) {
-                                try {
-                                    var kc = JSON.parse(sVal);
-                                    if (kc && kc[topic]) { symKey = kc[topic]; }
-                                } catch(ke) {}
-                            }
-
-                            // Strategy 3: value contains topic and looks like symKey storage
-                            if (!symKey && sVal.indexOf(topic) !== -1) {
-                                // Try: value is a map where key=topic, value=symKey (hex string)
-                                try {
-                                    var obj = JSON.parse(sVal);
-                                    if (typeof obj === 'object' && !Array.isArray(obj)) {
-                                        for (var ok in obj) {
-                                            if (ok === topic && typeof obj[ok] === 'string' && obj[ok].length === 64) {
-                                                symKey = obj[ok]; break;
+                                    if (!symKey && kc.keychain) {
+                                        symKey = kc.keychain[topic] || null;
+                                    }
+                                    if (!symKey && kc.map) {
+                                        symKey = kc.map.get ? kc.map.get(topic) : kc.map[topic];
+                                    }
+                                    // Try iterating keychain values
+                                    if (!symKey && kc.values) {
+                                        try {
+                                            var vals = typeof kc.values === 'function' ? kc.values() : kc.values;
+                                            if (window._dbg) window._dbg('keychain values: ' + JSON.stringify(vals).substring(0, 200));
+                                        } catch(kve) {}
+                                    }
+                                }
+                                // Also try core.pairing
+                                if (!symKey && core.pairing) {
+                                    if (window._dbg) window._dbg('pairing keys: ' + Object.keys(core.pairing).join(', '));
+                                    var pairings = core.pairing.pairings || core.pairing.values;
+                                    if (pairings) {
+                                        var pArr = typeof pairings === 'function' ? pairings() : (Array.isArray(pairings) ? pairings : []);
+                                        for (var qi = 0; qi < pArr.length; qi++) {
+                                            if (pArr[qi] && pArr[qi].topic === topic) {
+                                                if (window._dbg) window._dbg('pairing match: ' + JSON.stringify(pArr[qi]).substring(0, 200));
                                             }
                                         }
                                     }
-                                } catch(oe) {}
+                                }
+                            } else {
+                                if (window._dbg) window._dbg('no core found on provider');
                             }
-
-                            if (symKey) break;
                         }
-                    } catch(lsErr) {
-                        if (window._dbg) window._dbg('localStorage error: ' + lsErr.message);
+                    } catch(provErr) {
+                        if (window._dbg) window._dbg('provider scan error: ' + provErr.message);
                     }
 
-                    if (window._dbg) window._dbg('symKey found: ' + (symKey ? 'YES (' + symKey.substring(0,8) + '...)' : 'NO'));
+                    // Strategy 2: localStorage fallback
+                    if (!symKey) {
+                        try {
+                            if (window._dbg) window._dbg('localStorage (' + localStorage.length + ' keys):');
+                            for (var si = 0; si < localStorage.length; si++) {
+                                var sKey = localStorage.key(si);
+                                if (!sKey) continue;
+                                var sVal = localStorage.getItem(sKey) || '';
+                                if (window._dbg) window._dbg('  ' + sKey + ' = ' + sVal.substring(0, 80));
+                                // Try all parse strategies
+                                if (sVal.indexOf(topic) !== -1 || sKey.indexOf('keychain') !== -1) {
+                                    try {
+                                        var d = JSON.parse(sVal);
+                                        // Direct map {topic: symKey}
+                                        if (d && d[topic] && typeof d[topic] === 'string') { symKey = d[topic]; }
+                                        // Array of objects with .topic + .symKey
+                                        if (!symKey && Array.isArray(d)) {
+                                            for (var ai = 0; ai < d.length; ai++) {
+                                                if (d[ai] && d[ai].topic === topic && d[ai].symKey) { symKey = d[ai].symKey; break; }
+                                            }
+                                        }
+                                    } catch(pe) {}
+                                }
+                                if (symKey) break;
+                            }
+                        } catch(lsErr) {}
+                    }
+
+                    if (window._dbg) window._dbg('symKey: ' + (symKey ? 'YES (' + symKey.substring(0,8) + '...)' : 'NO'));
 
                     var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
                     var redirectUrl;
@@ -1211,6 +1244,8 @@
                     icon: "https://raw.githubusercontent.com/0xBarrry/okxverify-miniapp/main/icon.png"
                 }
             });
+            // Expose for window.open interceptor (needs to read provider internals for symKey)
+            window._okxProvider = provider;
 
             // Init Solana provider wrapper if available
             if (OKXSolProvider && provider) {
