@@ -124,14 +124,19 @@
             if (!url || typeof url !== 'string') return false;
             var scheme;
             try { scheme = new URL(url).protocol; } catch (e) { return false; }
-            // Allow web3.okx.com HTTPS URLs through when wallet mode — they're Universal Links
-            // that open the MAIN OKX app. We need to intercept and redirect to OKX Wallet.
+            // OKX SDK uses proprietary protocol via web3.okx.com Universal Links.
+            // web3.okx.com is claimed by BOTH main OKX app AND OKX Wallet on iOS.
+            // web3link.okx.com is claimed ONLY by OKX Wallet (green).
+            // Swap domain when user selected OKX Wallet mode.
             if (scheme === 'https:' && url.indexOf('web3.okx.com') !== -1) {
-                // OKX's proprietary protocol — route through Universal Link (main OKX app)
-                console.log('[SchemeInterceptor] web3.okx.com → tg.openLink');
-                if (window._dbg) window._dbg('web3.okx.com → tg.openLink');
+                var connectUrl = url;
+                if (selectedApp !== 'main') {
+                    connectUrl = url.replace('web3.okx.com', 'web3link.okx.com');
+                }
+                console.log('[SchemeInterceptor] → tg.openLink:', connectUrl.substring(0, 80));
+                if (window._dbg) window._dbg('→ tg.openLink: ' + connectUrl.substring(0, 80));
                 try {
-                    window.Telegram.WebApp.openLink(url, { try_instant_view: false });
+                    window.Telegram.WebApp.openLink(connectUrl, { try_instant_view: false });
                 } catch(e3) {
                     if (window._dbg) window._dbg('openLink error: ' + e3.message);
                     return false;
@@ -240,16 +245,17 @@
             // web3.okx.com Universal Link opens MAIN OKX app (black) — we need OKX Wallet (green).
             // Convert to okxwallet:// custom scheme via redirect.html.
             if (typeof url === 'string' && url.indexOf('web3.okx.com') !== -1) {
-                // OKX SDK uses its own protocol (NOT standard WalletConnect).
-                // web3.okx.com/ul/connect?topic=X is OKX's proprietary format.
-                // Only the main OKX app handles this via Universal Links.
-                // OKX Wallet (green) does NOT understand okxwallet://ul/connect deep links.
-                // Solution: always route through tg.openLink → Safari → Universal Link → OKX app.
-                // The wallet address is the same in both apps.
-                console.log('[window.open] web3.okx.com → tg.openLink (Universal Link)');
-                if (window._dbg) window._dbg('[window.open] web3.okx.com → tg.openLink');
+                // OKX SDK proprietary protocol: web3.okx.com/ul/connect?topic=X
+                // Swap to web3link.okx.com for OKX Wallet (green) — that domain is
+                // claimed ONLY by com.okx.wallet via Apple AASA.
+                var connectUrl = url;
+                if (selectedApp !== 'main') {
+                    connectUrl = url.replace('web3.okx.com', 'web3link.okx.com');
+                }
+                console.log('[window.open] → tg.openLink:', connectUrl.substring(0, 80));
+                if (window._dbg) window._dbg('[window.open] → ' + connectUrl.substring(0, 80));
                 try {
-                    window.Telegram.WebApp.openLink(url, { try_instant_view: false });
+                    window.Telegram.WebApp.openLink(connectUrl, { try_instant_view: false });
                 } catch(e) {
                     if (window._dbg) window._dbg('openLink error: ' + e.message);
                     if (_origOpen) _origOpen.apply(window, arguments);
