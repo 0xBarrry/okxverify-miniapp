@@ -276,33 +276,59 @@
                     var parsed = new URL(url);
                     var topic = parsed.searchParams.get('topic') || '';
 
-                    // Try to find symKey from WalletConnect localStorage to build full WC URI.
-                    // Without symKey, wallet opens but can't decrypt the relay session.
+                    // Dump ALL localStorage keys to debug — need to find where SDK stores symKey
                     var symKey = null;
                     try {
+                        if (window._dbg) window._dbg('localStorage keys (' + localStorage.length + '):');
                         for (var si = 0; si < localStorage.length; si++) {
                             var sKey = localStorage.key(si);
                             if (!sKey) continue;
-                            var sVal = localStorage.getItem(sKey);
-                            if (!sVal || sVal.indexOf(topic) === -1) continue;
-                            // WC v2 stores pairings as JSON with topic + symKey
-                            var sData = JSON.parse(sVal);
-                            // Could be array of pairings or single object
-                            var pairings = Array.isArray(sData) ? sData : [sData];
-                            for (var pi = 0; pi < pairings.length; pi++) {
-                                var p = pairings[pi];
-                                if (p && p.topic === topic && p.symKey) {
-                                    symKey = p.symKey;
-                                    break;
-                                }
+                            var sVal = localStorage.getItem(sKey) || '';
+                            // Show key + first 120 chars of value
+                            if (window._dbg) window._dbg('  [' + sKey + '] = ' + sVal.substring(0, 120));
+
+                            // Strategy 1: symKey in same object as topic
+                            if (sVal.indexOf(topic) !== -1) {
+                                try {
+                                    var sData = JSON.parse(sVal);
+                                    var items = Array.isArray(sData) ? sData : [sData];
+                                    for (var pi = 0; pi < items.length; pi++) {
+                                        var p = items[pi];
+                                        if (p && p.topic === topic && p.symKey) { symKey = p.symKey; break; }
+                                    }
+                                } catch(pe) {}
                             }
+
+                            // Strategy 2: WC keychain — stores {topic: symKey} mapping
+                            if (!symKey && sKey.indexOf('keychain') !== -1) {
+                                try {
+                                    var kc = JSON.parse(sVal);
+                                    if (kc && kc[topic]) { symKey = kc[topic]; }
+                                } catch(ke) {}
+                            }
+
+                            // Strategy 3: value contains topic and looks like symKey storage
+                            if (!symKey && sVal.indexOf(topic) !== -1) {
+                                // Try: value is a map where key=topic, value=symKey (hex string)
+                                try {
+                                    var obj = JSON.parse(sVal);
+                                    if (typeof obj === 'object' && !Array.isArray(obj)) {
+                                        for (var ok in obj) {
+                                            if (ok === topic && typeof obj[ok] === 'string' && obj[ok].length === 64) {
+                                                symKey = obj[ok]; break;
+                                            }
+                                        }
+                                    }
+                                } catch(oe) {}
+                            }
+
                             if (symKey) break;
                         }
                     } catch(lsErr) {
-                        console.warn('[window.open] localStorage scan error:', lsErr.message);
+                        if (window._dbg) window._dbg('localStorage error: ' + lsErr.message);
                     }
 
-                    if (window._dbg) window._dbg('symKey found: ' + (symKey ? 'yes (' + symKey.substring(0,8) + '...)' : 'NO'));
+                    if (window._dbg) window._dbg('symKey found: ' + (symKey ? 'YES (' + symKey.substring(0,8) + '...)' : 'NO'));
 
                     var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
                     var redirectUrl;
