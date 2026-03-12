@@ -28,40 +28,50 @@ p{color:#aaa;font-size:14px;margin-top:16px}
     var params = new URLSearchParams(window.location.search);
     var uri = params.get('uri') || '';
     var app = params.get('app') || 'wallet';
+    var isIOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
 
     if (!uri) {
         document.getElementById('status').textContent = 'Error: missing URI parameter';
         return;
     }
 
-    // App config: package name, scheme, store link
+    // App config: package name, scheme, store links
     var apps = {
         wallet: {
             pkg: 'com.okx.wallet',
             scheme: 'okxwallet',
-            store: 'https://play.google.com/store/apps/details?id=com.okx.wallet'
+            storeAndroid: 'https://play.google.com/store/apps/details?id=com.okx.wallet',
+            storeIOS: 'https://apps.apple.com/app/okx-wallet-crypto-web3/id6743309484'
         },
         okx: {
             pkg: 'com.okinc.okex.gp',
             scheme: 'okx',
-            store: 'https://play.google.com/store/apps/details?id=com.okinc.okex.gp'
+            storeAndroid: 'https://play.google.com/store/apps/details?id=com.okinc.okex.gp',
+            storeIOS: 'https://apps.apple.com/app/okx-buy-bitcoin-btc-crypto/id1327268470'
         }
     };
 
     var cfg = apps[app] || apps.wallet;
+    var storeUrl = isIOS ? cfg.storeIOS : cfg.storeAndroid;
 
-    // Android intent:// URI — Chrome opens app by package name, no App Links needed
-    var intentUrl = 'intent://ul/v1/wc?uri=' + encodeURIComponent(uri)
-        + '#Intent;scheme=' + cfg.scheme
-        + ';package=' + cfg.pkg
-        + ';end';
+    // Build custom scheme deep link: okxwallet://ul/v1/wc?uri=...
+    var deepLink = cfg.scheme + '://ul/v1/wc?uri=' + encodeURIComponent(uri);
 
-    // Set fallback links
-    document.getElementById('direct-link').href = intentUrl;
-    document.getElementById('store-link').href = cfg.store;
-
-    // Auto-redirect
-    window.location.href = intentUrl;
+    if (isIOS) {
+        // iOS: custom scheme directly — Safari prompts "Open in OKX Wallet?"
+        document.getElementById('direct-link').href = deepLink;
+        document.getElementById('store-link').href = storeUrl;
+        window.location.href = deepLink;
+    } else {
+        // Android: intent:// URI — Chrome opens app by package name
+        var intentUrl = 'intent://ul/v1/wc?uri=' + encodeURIComponent(uri)
+            + '#Intent;scheme=' + cfg.scheme
+            + ';package=' + cfg.pkg
+            + ';end';
+        document.getElementById('direct-link').href = intentUrl;
+        document.getElementById('store-link').href = storeUrl;
+        window.location.href = intentUrl;
+    }
 
     // Show fallback after 2s
     setTimeout(function() {
