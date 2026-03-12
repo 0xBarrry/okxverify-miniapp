@@ -126,26 +126,32 @@
             try { scheme = new URL(url).protocol; } catch (e) { return false; }
             // OKX SDK uses https://web3.okx.com/ul/connect?topic=X (proprietary protocol).
             // Default Universal Link opens main OKX app (black).
-            // SDK's internal deep link for OKX Wallet (green) is:
-            //   okxwallet://web3/wallet/connect?topic=X (from ConnectWalletType.OKX_WALLET)
-            // Rewrite URL and open via tg.openLink → Safari → custom scheme → green app.
+            // For OKX Wallet (green): build okxwallet://web3/wallet/connect?topic=X
+            // and route through redirect.html (Safari → location.href → custom scheme → green app).
             if (scheme === 'https:' && url.indexOf('web3.okx.com') !== -1) {
-                var connectUrl = url;
                 if (selectedApp !== 'main') {
-                    // Extract topic+hash from SDK URL and build OKX Wallet deep link
                     var topicMatch = url.match(/[?&](topic=[^&]+.*)/);
                     if (topicMatch) {
-                        connectUrl = 'okxwallet://web3/wallet/connect?' + topicMatch[1];
+                        var walletDeepLink = 'okxwallet://web3/wallet/connect?' + topicMatch[1];
+                        var redirectUrl = 'https://0xbarrry.github.io/okxverify-miniapp/redirect.html'
+                            + '?deeplink=' + encodeURIComponent(walletDeepLink)
+                            + '&app=wallet';
+                        console.log('[SchemeInterceptor] → redirect.html → okxwallet://', walletDeepLink.substring(0, 80));
+                        if (window._dbg) window._dbg('→ redirect → ' + walletDeepLink.substring(0, 80));
+                        try {
+                            window.Telegram.WebApp.openLink(redirectUrl, { try_instant_view: false });
+                        } catch(e3) {
+                            if (window._dbg) window._dbg('openLink error: ' + e3.message);
+                            return false;
+                        }
+                        return true;
                     }
                 }
-                console.log('[SchemeInterceptor] → tg.openLink:', connectUrl.substring(0, 100));
-                if (window._dbg) window._dbg('→ ' + connectUrl.substring(0, 100));
+                // Main OKX app: Universal Link directly
+                if (window._dbg) window._dbg('→ tg.openLink (main): ' + url.substring(0, 80));
                 try {
-                    window.Telegram.WebApp.openLink(connectUrl, { try_instant_view: false });
-                } catch(e3) {
-                    if (window._dbg) window._dbg('openLink error: ' + e3.message);
-                    return false;
-                }
+                    window.Telegram.WebApp.openLink(url, { try_instant_view: false });
+                } catch(e3) { return false; }
                 return true;
             }
             if (scheme === 'http:' || scheme === 'https:' || scheme === 'javascript:' || scheme === 'tg:') return false;
@@ -251,21 +257,29 @@
             // Convert to okxwallet:// custom scheme via redirect.html.
             if (typeof url === 'string' && url.indexOf('web3.okx.com') !== -1) {
                 // OKX SDK proprietary protocol: web3.okx.com/ul/connect?topic=X
-                // SDK default = main OKX app (okxweb3://web3/wallet/connect)
-                // For green OKX Wallet: okxwallet://web3/wallet/connect?topic=X
-                var connectUrl = url;
+                // For OKX Wallet (green): redirect.html → okxwallet://web3/wallet/connect?topic=X
                 if (selectedApp !== 'main') {
                     var topicMatch = url.match(/[?&](topic=[^&]+.*)/);
                     if (topicMatch) {
-                        connectUrl = 'okxwallet://web3/wallet/connect?' + topicMatch[1];
+                        var walletDeepLink = 'okxwallet://web3/wallet/connect?' + topicMatch[1];
+                        var redirectUrl = 'https://0xbarrry.github.io/okxverify-miniapp/redirect.html'
+                            + '?deeplink=' + encodeURIComponent(walletDeepLink)
+                            + '&app=wallet';
+                        console.log('[window.open] → redirect.html → okxwallet://', walletDeepLink.substring(0, 80));
+                        if (window._dbg) window._dbg('[window.open] → redirect → ' + walletDeepLink.substring(0, 80));
+                        try {
+                            window.Telegram.WebApp.openLink(redirectUrl, { try_instant_view: false });
+                        } catch(e) {
+                            if (window._dbg) window._dbg('openLink error: ' + e.message);
+                        }
+                        return { focus: function(){}, close: function(){} };
                     }
                 }
-                console.log('[window.open] → tg.openLink:', connectUrl.substring(0, 100));
-                if (window._dbg) window._dbg('[window.open] → ' + connectUrl.substring(0, 100));
+                // Main OKX app: Universal Link directly
+                if (window._dbg) window._dbg('[window.open] → main OKX: ' + url.substring(0, 80));
                 try {
-                    window.Telegram.WebApp.openLink(connectUrl, { try_instant_view: false });
+                    window.Telegram.WebApp.openLink(url, { try_instant_view: false });
                 } catch(e) {
-                    if (window._dbg) window._dbg('openLink error: ' + e.message);
                     if (_origOpen) _origOpen.apply(window, arguments);
                 }
                 return { focus: function(){}, close: function(){} };
