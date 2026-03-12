@@ -202,6 +202,18 @@
         // Intercept window.open (covers window.open('okx://...'))
         var _origOpen = window.open;
         window.open = function(url, target, features) {
+            // Log ALL window.open calls — catches SDK deep links AND t.me bot links
+            console.log('[window.open] url:', url && url.substring ? url.substring(0, 200) : url);
+            if (window._dbg) window._dbg('[window.open] ' + (url && url.substring ? url.substring(0, 120) : url));
+            // Intercept t.me/OKX_WALLET_BOT links (SDK may use window.open instead of openTelegramLink)
+            if (typeof url === 'string' && url.indexOf('OKX_WALLET_BOT') !== -1) {
+                if (window._dbg) window._dbg('[window.open] OKX_WALLET_BOT detected → routing to interceptor');
+                // Re-use the same TMA interceptor logic via openTelegramLink patch
+                try { window.Telegram.WebApp.openTelegramLink(url); } catch(e) {
+                    if (window._dbg) window._dbg('[window.open] fallback error: ' + e.message);
+                }
+                return { focus: function(){}, close: function(){} };
+            }
             if (handleCustomUrl(url)) return { focus: function(){}, close: function(){} };
             return _origOpen ? _origOpen.apply(window, arguments) : null;
         };
