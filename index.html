@@ -276,106 +276,23 @@
                     var parsed = new URL(url);
                     var topic = parsed.searchParams.get('topic') || '';
 
-                    // Extract symKey from provider internals or localStorage
-                    var symKey = null;
-
-                    // Strategy 1: provider._core.crypto.keychain (WC v2 internal)
-                    try {
-                        var prov = window._okxProvider || provider;
-                        if (prov) {
-                            // Dump provider top-level keys
-                            var provKeys = Object.keys(prov).join(', ');
-                            if (window._dbg) window._dbg('provider keys: ' + provKeys);
-                            // Try known WC v2 paths to keychain
-                            var core = prov.core || prov._core || (prov.signClient && prov.signClient.core);
-                            if (core) {
-                                if (window._dbg) window._dbg('core keys: ' + Object.keys(core).join(', '));
-                                var crypto = core.crypto;
-                                if (crypto && crypto.keychain) {
-                                    var kc = crypto.keychain;
-                                    if (window._dbg) window._dbg('keychain keys: ' + Object.keys(kc).join(', '));
-                                    // keychain.get(topic) or keychain.keychain map
-                                    if (typeof kc.get === 'function') {
-                                        try { symKey = kc.get(topic); } catch(kg) {}
-                                    }
-                                    if (!symKey && kc.keychain) {
-                                        symKey = kc.keychain[topic] || null;
-                                    }
-                                    if (!symKey && kc.map) {
-                                        symKey = kc.map.get ? kc.map.get(topic) : kc.map[topic];
-                                    }
-                                    // Try iterating keychain values
-                                    if (!symKey && kc.values) {
-                                        try {
-                                            var vals = typeof kc.values === 'function' ? kc.values() : kc.values;
-                                            if (window._dbg) window._dbg('keychain values: ' + JSON.stringify(vals).substring(0, 200));
-                                        } catch(kve) {}
-                                    }
-                                }
-                                // Also try core.pairing
-                                if (!symKey && core.pairing) {
-                                    if (window._dbg) window._dbg('pairing keys: ' + Object.keys(core.pairing).join(', '));
-                                    var pairings = core.pairing.pairings || core.pairing.values;
-                                    if (pairings) {
-                                        var pArr = typeof pairings === 'function' ? pairings() : (Array.isArray(pairings) ? pairings : []);
-                                        for (var qi = 0; qi < pArr.length; qi++) {
-                                            if (pArr[qi] && pArr[qi].topic === topic) {
-                                                if (window._dbg) window._dbg('pairing match: ' + JSON.stringify(pArr[qi]).substring(0, 200));
-                                            }
-                                        }
-                                    }
-                                }
-                            } else {
-                                if (window._dbg) window._dbg('no core found on provider');
-                            }
-                        }
-                    } catch(provErr) {
-                        if (window._dbg) window._dbg('provider scan error: ' + provErr.message);
-                    }
-
-                    // Strategy 2: localStorage fallback
-                    if (!symKey) {
-                        try {
-                            if (window._dbg) window._dbg('localStorage (' + localStorage.length + ' keys):');
-                            for (var si = 0; si < localStorage.length; si++) {
-                                var sKey = localStorage.key(si);
-                                if (!sKey) continue;
-                                var sVal = localStorage.getItem(sKey) || '';
-                                if (window._dbg) window._dbg('  ' + sKey + ' = ' + sVal.substring(0, 80));
-                                // Try all parse strategies
-                                if (sVal.indexOf(topic) !== -1 || sKey.indexOf('keychain') !== -1) {
-                                    try {
-                                        var d = JSON.parse(sVal);
-                                        // Direct map {topic: symKey}
-                                        if (d && d[topic] && typeof d[topic] === 'string') { symKey = d[topic]; }
-                                        // Array of objects with .topic + .symKey
-                                        if (!symKey && Array.isArray(d)) {
-                                            for (var ai = 0; ai < d.length; ai++) {
-                                                if (d[ai] && d[ai].topic === topic && d[ai].symKey) { symKey = d[ai].symKey; break; }
-                                            }
-                                        }
-                                    } catch(pe) {}
-                                }
-                                if (symKey) break;
-                            }
-                        } catch(lsErr) {}
-                    }
-
-                    if (window._dbg) window._dbg('symKey: ' + (symKey ? 'YES (' + symKey.substring(0,8) + '...)' : 'NO'));
+                    // Check if display_uri event gave us the full WC URI
+                    var fullWcUri = window._wcUriForWallet || null;
+                    if (window._dbg) window._dbg('wcUri from event: ' + (fullWcUri ? fullWcUri.substring(0, 80) : 'NO'));
 
                     var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
                     var redirectUrl;
+                    window._wcUriHandled = true;
 
-                    if (symKey) {
-                        // Full WC URI — wallet can connect to relay and show approval
-                        var wcUri = 'wc:' + topic + '@2?relay-protocol=irn&symKey=' + symKey;
-                        redirectUrl = redirectBase + '?app=wallet&uri=' + encodeURIComponent(wcUri);
-                        if (window._dbg) window._dbg('full WC URI built → redirect.html');
+                    if (fullWcUri) {
+                        // Full WC URI from display_uri event — wallet can connect!
+                        redirectUrl = redirectBase + '?app=wallet&uri=' + encodeURIComponent(fullWcUri);
+                        if (window._dbg) window._dbg('using event URI → redirect.html');
                     } else {
-                        // Fallback: just topic (may not work for all wallets)
+                        // No URI from event — fallback to topic-only (may not work)
                         var walletDeepLink = 'okxwallet://ul/connect?topic=' + encodeURIComponent(topic);
                         redirectUrl = redirectBase + '?app=wallet&deeplink=' + encodeURIComponent(walletDeepLink);
-                        if (window._dbg) window._dbg('fallback: topic-only deeplink');
+                        if (window._dbg) window._dbg('fallback: topic-only (no event URI)');
                     }
 
                     console.log('[window.open] redirectUrl:', redirectUrl);
@@ -1345,15 +1262,44 @@
                 await initProvider(false);
                 dbg('initProvider done, calling provider.connect() for ' + selectedNetwork);
 
-                // KEEP TelegramWebviewProxy on ALL platforms (TMA mode).
-                // In TMA mode, SDK calls openTelegramLink → @OKX_WALLET_BOT.
-                // Our patchOKXTelegramLink() in <head> intercepts this and extracts
-                // the FULL WC URI (topic + symKey) from the startapp parameter,
-                // then routes to redirect.html with the complete URI.
-                // Without TelegramWebviewProxy (non-TMA), SDK uses window.open with
-                // just the topic (no symKey) → wallet opens but can't connect.
-                // NOTE: patchOKXTelegramLink() handles wallet vs main app routing.
-                dbg('TMA mode kept (openTelegramLink interceptor has full WC URI)');
+                // Listen for WC display_uri event — this gives us the FULL WC URI
+                // (topic + symKey) BEFORE the SDK tries to open the wallet.
+                // We block the SDK's own wallet-opening and do it ourselves with
+                // the correct app (OKX Wallet green vs OKX App black).
+                window._wcUriForWallet = null;
+                window._wcUriHandled = false;
+
+                // Hook into provider events — WC v2 emits 'display_uri'
+                try {
+                    var evTarget = provider;
+                    var evNames = ['display_uri', 'uri', 'proposal_uri'];
+                    for (var ei = 0; ei < evNames.length; ei++) {
+                        (function(evName) {
+                            try {
+                                evTarget.on(evName, function(uri) {
+                                    dbg('EVENT ' + evName + ': ' + (uri ? uri.substring(0, 80) : 'null'));
+                                    if (uri && uri.indexOf('wc:') === 0 && !window._wcUriHandled) {
+                                        window._wcUriForWallet = uri;
+                                    }
+                                });
+                            } catch(evErr) {}
+                        })(evNames[ei]);
+                    }
+                    // Also try signClient if available
+                    if (provider.signClient) {
+                        try {
+                            provider.signClient.on('display_uri', function(uri) {
+                                dbg('signClient display_uri: ' + (uri ? uri.substring(0, 80) : 'null'));
+                                if (uri && uri.indexOf('wc:') === 0 && !window._wcUriHandled) {
+                                    window._wcUriForWallet = uri;
+                                }
+                            });
+                        } catch(scErr) {}
+                    }
+                    dbg('WC URI event listeners registered');
+                } catch(hookErr) {
+                    dbg('event hook error: ' + hookErr.message);
+                }
 
                 // Start continuous relay poller — fires every 2s regardless of visibilitychange
                 startRelayPoller();
