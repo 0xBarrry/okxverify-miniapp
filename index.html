@@ -3,7 +3,7 @@
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Barry OKX Verify</title>
+    <title>Barry OKX Verify v2.1</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script>
     // Platform detection — declared in <head> so all scripts (interceptors + main) can use it
@@ -1141,8 +1141,6 @@
                     icon: "https://raw.githubusercontent.com/0xBarrry/okxverify-miniapp/main/icon.png"
                 }
             });
-            // Expose for window.open interceptor (needs to read provider internals for symKey)
-            window._okxProvider = provider;
 
             // Init Solana provider wrapper if available
             if (OKXSolProvider && provider) {
