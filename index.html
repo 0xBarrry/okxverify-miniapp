@@ -63,7 +63,8 @@
                         // Build app-specific deep link URL
                         // Main OKX App: www.okx.com/download?deep_link=...
                         // OKX Wallet: web3.okx.com/download?deeplink=...
-                        var isWalletApp = (selectedApp === 'wallet');
+                        // Default to wallet (green) unless user explicitly chose 'main'
+                        var isWalletApp = (selectedApp !== 'main');
                         var wcUriForLink = wcUri || (topic.indexOf('wc:') === 0 ? topic : null);
                         var mobileUrl;
                         var scheme = isWalletApp ? 'okxwallet' : 'okx';
@@ -126,7 +127,8 @@
                 // Build platform + app specific HTTPS deep link
                 // Main OKX App (black): www.okx.com/download?deep_link=...
                 // OKX Wallet (green): web3.okx.com/download?deeplink=...
-                var isWalletApp = (selectedApp === 'wallet');
+                // Default to wallet (green) unless user explicitly chose 'main'
+                var isWalletApp = (selectedApp !== 'main');
                 var scheme = isWalletApp ? 'okxwallet' : 'okx';
                 var deepLink = wcUri
                     ? scheme + '://ul/v1/wc?uri=' + encodeURIComponent(wcUri)
