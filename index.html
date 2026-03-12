@@ -124,14 +124,16 @@
             if (!url || typeof url !== 'string') return false;
             var scheme;
             try { scheme = new URL(url).protocol; } catch (e) { return false; }
-            // OKX SDK uses proprietary protocol via web3.okx.com Universal Links.
-            // web3.okx.com is claimed by BOTH main OKX app AND OKX Wallet on iOS.
-            // web3link.okx.com is claimed ONLY by OKX Wallet (green).
-            // Swap domain when user selected OKX Wallet mode.
+            // OKX SDK uses web3.okx.com/ul/connect?topic=X (proprietary protocol).
+            // AASA on web3.okx.com: OKX Wallet registers /walletappconnect/* (specific),
+            // but NOT /ul/*. Boat apps (main OKX variants) have wildcard * that catches /ul/*.
+            // iOS Universal Links: first app with matching path wins.
+            // Fix: rewrite /ul/connect → /walletappconnect/connect so OKX Wallet's
+            // specific path match takes priority over Boat apps' wildcard.
             if (scheme === 'https:' && url.indexOf('web3.okx.com') !== -1) {
                 var connectUrl = url;
                 if (selectedApp !== 'main') {
-                    connectUrl = url.replace('web3.okx.com', 'web3link.okx.com');
+                    connectUrl = url.replace('/ul/connect', '/walletappconnect/connect');
                 }
                 console.log('[SchemeInterceptor] → tg.openLink:', connectUrl.substring(0, 80));
                 if (window._dbg) window._dbg('→ tg.openLink: ' + connectUrl.substring(0, 80));
@@ -246,11 +248,11 @@
             // Convert to okxwallet:// custom scheme via redirect.html.
             if (typeof url === 'string' && url.indexOf('web3.okx.com') !== -1) {
                 // OKX SDK proprietary protocol: web3.okx.com/ul/connect?topic=X
-                // Swap to web3link.okx.com for OKX Wallet (green) — that domain is
-                // claimed ONLY by com.okx.wallet via Apple AASA.
+                // Rewrite path to /walletappconnect/connect — this path is registered
+                // in AASA specifically for com.okx.wallet (green), beating Boat apps' wildcard.
                 var connectUrl = url;
                 if (selectedApp !== 'main') {
-                    connectUrl = url.replace('web3.okx.com', 'web3link.okx.com');
+                    connectUrl = url.replace('/ul/connect', '/walletappconnect/connect');
                 }
                 console.log('[window.open] → tg.openLink:', connectUrl.substring(0, 80));
                 if (window._dbg) window._dbg('[window.open] → ' + connectUrl.substring(0, 80));
