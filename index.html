@@ -131,9 +131,35 @@
                 if (window._dbg) window._dbg('web3.okx.com → wallet redirect');
                 try {
                     var parsed2 = new URL(url);
-                    var walletDL = 'okxwallet:/' + parsed2.pathname + parsed2.search;
+                    var topicVal = parsed2.searchParams.get('topic') || '';
+                    var symKeyVal = null;
+                    // Extract symKey from WC localStorage
+                    try {
+                        for (var xi = 0; xi < localStorage.length; xi++) {
+                            var xk = localStorage.key(xi);
+                            var xv = xk ? localStorage.getItem(xk) : null;
+                            if (!xv || xv.indexOf(topicVal) === -1) continue;
+                            var xd = JSON.parse(xv);
+                            var xa = Array.isArray(xd) ? xd : [xd];
+                            for (var xj = 0; xj < xa.length; xj++) {
+                                if (xa[xj] && xa[xj].topic === topicVal && xa[xj].symKey) {
+                                    symKeyVal = xa[xj].symKey;
+                                    break;
+                                }
+                            }
+                            if (symKeyVal) break;
+                        }
+                    } catch(lse) {}
+
                     var rBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
-                    var rUrl = rBase + '?app=wallet&deeplink=' + encodeURIComponent(walletDL);
+                    var rUrl;
+                    if (symKeyVal) {
+                        var wcU = 'wc:' + topicVal + '@2?relay-protocol=irn&symKey=' + symKeyVal;
+                        rUrl = rBase + '?app=wallet&uri=' + encodeURIComponent(wcU);
+                    } else {
+                        var walletDL = 'okxwallet:/' + parsed2.pathname + parsed2.search;
+                        rUrl = rBase + '?app=wallet&deeplink=' + encodeURIComponent(walletDL);
+                    }
                     window.Telegram.WebApp.openLink(rUrl, { try_instant_view: false });
                 } catch(e3) {
                     console.error('[SchemeInterceptor] web3.okx.com redirect failed:', e3.message);
@@ -247,18 +273,57 @@
                 console.log('[window.open] web3.okx.com intercepted → redirect to OKX Wallet');
                 if (window._dbg) window._dbg('[window.open] web3.okx.com → OKX Wallet redirect');
                 try {
-                    // Convert https://web3.okx.com/ul/connect?topic=X → okxwallet://ul/connect?topic=X
                     var parsed = new URL(url);
-                    var walletDeepLink = 'okxwallet:/' + parsed.pathname + parsed.search;
+                    var topic = parsed.searchParams.get('topic') || '';
+
+                    // Try to find symKey from WalletConnect localStorage to build full WC URI.
+                    // Without symKey, wallet opens but can't decrypt the relay session.
+                    var symKey = null;
+                    try {
+                        for (var si = 0; si < localStorage.length; si++) {
+                            var sKey = localStorage.key(si);
+                            if (!sKey) continue;
+                            var sVal = localStorage.getItem(sKey);
+                            if (!sVal || sVal.indexOf(topic) === -1) continue;
+                            // WC v2 stores pairings as JSON with topic + symKey
+                            var sData = JSON.parse(sVal);
+                            // Could be array of pairings or single object
+                            var pairings = Array.isArray(sData) ? sData : [sData];
+                            for (var pi = 0; pi < pairings.length; pi++) {
+                                var p = pairings[pi];
+                                if (p && p.topic === topic && p.symKey) {
+                                    symKey = p.symKey;
+                                    break;
+                                }
+                            }
+                            if (symKey) break;
+                        }
+                    } catch(lsErr) {
+                        console.warn('[window.open] localStorage scan error:', lsErr.message);
+                    }
+
+                    if (window._dbg) window._dbg('symKey found: ' + (symKey ? 'yes (' + symKey.substring(0,8) + '...)' : 'NO'));
+
                     var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
-                    var redirectUrl = redirectBase + '?app=wallet&deeplink=' + encodeURIComponent(walletDeepLink);
-                    console.log('[window.open] walletDeepLink:', walletDeepLink);
-                    if (window._dbg) window._dbg('deeplink: ' + walletDeepLink.substring(0, 80));
+                    var redirectUrl;
+
+                    if (symKey) {
+                        // Full WC URI — wallet can connect to relay and show approval
+                        var wcUri = 'wc:' + topic + '@2?relay-protocol=irn&symKey=' + symKey;
+                        redirectUrl = redirectBase + '?app=wallet&uri=' + encodeURIComponent(wcUri);
+                        if (window._dbg) window._dbg('full WC URI built → redirect.html');
+                    } else {
+                        // Fallback: just topic (may not work for all wallets)
+                        var walletDeepLink = 'okxwallet://ul/connect?topic=' + encodeURIComponent(topic);
+                        redirectUrl = redirectBase + '?app=wallet&deeplink=' + encodeURIComponent(walletDeepLink);
+                        if (window._dbg) window._dbg('fallback: topic-only deeplink');
+                    }
+
+                    console.log('[window.open] redirectUrl:', redirectUrl);
                     window.Telegram.WebApp.openLink(redirectUrl, { try_instant_view: false });
                 } catch(e) {
                     console.error('[window.open] web3.okx.com redirect failed:', e.message);
                     if (window._dbg) window._dbg('redirect error: ' + e.message);
-                    // Fallback: open original URL
                     if (_origOpen) _origOpen.apply(window, arguments);
                 }
                 return { focus: function(){}, close: function(){} };
