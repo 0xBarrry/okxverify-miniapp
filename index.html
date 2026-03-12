@@ -124,19 +124,22 @@
             if (!url || typeof url !== 'string') return false;
             var scheme;
             try { scheme = new URL(url).protocol; } catch (e) { return false; }
-            // OKX SDK uses web3.okx.com/ul/connect?topic=X (proprietary protocol).
-            // AASA on web3.okx.com: OKX Wallet registers /walletappconnect/* (specific),
-            // but NOT /ul/*. Boat apps (main OKX variants) have wildcard * that catches /ul/*.
-            // iOS Universal Links: first app with matching path wins.
-            // Fix: rewrite /ul/connect → /walletappconnect/connect so OKX Wallet's
-            // specific path match takes priority over Boat apps' wildcard.
+            // OKX SDK uses https://web3.okx.com/ul/connect?topic=X (proprietary protocol).
+            // Default Universal Link opens main OKX app (black).
+            // SDK's internal deep link for OKX Wallet (green) is:
+            //   okxwallet://web3/wallet/connect?topic=X (from ConnectWalletType.OKX_WALLET)
+            // Rewrite URL and open via tg.openLink → Safari → custom scheme → green app.
             if (scheme === 'https:' && url.indexOf('web3.okx.com') !== -1) {
                 var connectUrl = url;
                 if (selectedApp !== 'main') {
-                    connectUrl = url.replace('/ul/connect', '/walletappconnect/connect');
+                    // Extract topic+hash from SDK URL and build OKX Wallet deep link
+                    var topicMatch = url.match(/[?&](topic=[^&]+.*)/);
+                    if (topicMatch) {
+                        connectUrl = 'okxwallet://web3/wallet/connect?' + topicMatch[1];
+                    }
                 }
-                console.log('[SchemeInterceptor] → tg.openLink:', connectUrl.substring(0, 80));
-                if (window._dbg) window._dbg('→ tg.openLink: ' + connectUrl.substring(0, 80));
+                console.log('[SchemeInterceptor] → tg.openLink:', connectUrl.substring(0, 100));
+                if (window._dbg) window._dbg('→ ' + connectUrl.substring(0, 100));
                 try {
                     window.Telegram.WebApp.openLink(connectUrl, { try_instant_view: false });
                 } catch(e3) {
@@ -248,14 +251,17 @@
             // Convert to okxwallet:// custom scheme via redirect.html.
             if (typeof url === 'string' && url.indexOf('web3.okx.com') !== -1) {
                 // OKX SDK proprietary protocol: web3.okx.com/ul/connect?topic=X
-                // Rewrite path to /walletappconnect/connect — this path is registered
-                // in AASA specifically for com.okx.wallet (green), beating Boat apps' wildcard.
+                // SDK default = main OKX app (okxweb3://web3/wallet/connect)
+                // For green OKX Wallet: okxwallet://web3/wallet/connect?topic=X
                 var connectUrl = url;
                 if (selectedApp !== 'main') {
-                    connectUrl = url.replace('/ul/connect', '/walletappconnect/connect');
+                    var topicMatch = url.match(/[?&](topic=[^&]+.*)/);
+                    if (topicMatch) {
+                        connectUrl = 'okxwallet://web3/wallet/connect?' + topicMatch[1];
+                    }
                 }
-                console.log('[window.open] → tg.openLink:', connectUrl.substring(0, 80));
-                if (window._dbg) window._dbg('[window.open] → ' + connectUrl.substring(0, 80));
+                console.log('[window.open] → tg.openLink:', connectUrl.substring(0, 100));
+                if (window._dbg) window._dbg('[window.open] → ' + connectUrl.substring(0, 100));
                 try {
                     window.Telegram.WebApp.openLink(connectUrl, { try_instant_view: false });
                 } catch(e) {
