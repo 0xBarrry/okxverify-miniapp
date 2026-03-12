@@ -126,44 +126,14 @@
             try { scheme = new URL(url).protocol; } catch (e) { return false; }
             // Allow web3.okx.com HTTPS URLs through when wallet mode — they're Universal Links
             // that open the MAIN OKX app. We need to intercept and redirect to OKX Wallet.
-            if (scheme === 'https:' && selectedApp !== 'main' && url.indexOf('web3.okx.com') !== -1) {
-                console.log('[SchemeInterceptor] web3.okx.com HTTPS intercepted → wallet redirect');
-                if (window._dbg) window._dbg('web3.okx.com → wallet redirect');
+            if (scheme === 'https:' && url.indexOf('web3.okx.com') !== -1) {
+                // OKX's proprietary protocol — route through Universal Link (main OKX app)
+                console.log('[SchemeInterceptor] web3.okx.com → tg.openLink');
+                if (window._dbg) window._dbg('web3.okx.com → tg.openLink');
                 try {
-                    var parsed2 = new URL(url);
-                    var topicVal = parsed2.searchParams.get('topic') || '';
-                    var symKeyVal = null;
-                    // Extract symKey from WC localStorage
-                    try {
-                        for (var xi = 0; xi < localStorage.length; xi++) {
-                            var xk = localStorage.key(xi);
-                            var xv = xk ? localStorage.getItem(xk) : null;
-                            if (!xv || xv.indexOf(topicVal) === -1) continue;
-                            var xd = JSON.parse(xv);
-                            var xa = Array.isArray(xd) ? xd : [xd];
-                            for (var xj = 0; xj < xa.length; xj++) {
-                                if (xa[xj] && xa[xj].topic === topicVal && xa[xj].symKey) {
-                                    symKeyVal = xa[xj].symKey;
-                                    break;
-                                }
-                            }
-                            if (symKeyVal) break;
-                        }
-                    } catch(lse) {}
-
-                    var rBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
-                    var rUrl;
-                    if (symKeyVal) {
-                        var wcU = 'wc:' + topicVal + '@2?relay-protocol=irn&symKey=' + symKeyVal;
-                        rUrl = rBase + '?app=wallet&uri=' + encodeURIComponent(wcU);
-                    } else {
-                        var walletDL = 'okxwallet:/' + parsed2.pathname + parsed2.search;
-                        rUrl = rBase + '?app=wallet&deeplink=' + encodeURIComponent(walletDL);
-                    }
-                    window.Telegram.WebApp.openLink(rUrl, { try_instant_view: false });
+                    window.Telegram.WebApp.openLink(url, { try_instant_view: false });
                 } catch(e3) {
-                    console.error('[SchemeInterceptor] web3.okx.com redirect failed:', e3.message);
-                    if (window._dbg) window._dbg('redirect error: ' + e3.message);
+                    if (window._dbg) window._dbg('openLink error: ' + e3.message);
                     return false;
                 }
                 return true;
@@ -269,37 +239,19 @@
             // SDK uses window.open('https://web3.okx.com/ul/connect?topic=...') in non-TMA mode.
             // web3.okx.com Universal Link opens MAIN OKX app (black) — we need OKX Wallet (green).
             // Convert to okxwallet:// custom scheme via redirect.html.
-            if (typeof url === 'string' && selectedApp !== 'main' && url.indexOf('web3.okx.com') !== -1) {
-                console.log('[window.open] web3.okx.com intercepted → redirect to OKX Wallet');
-                if (window._dbg) window._dbg('[window.open] web3.okx.com → OKX Wallet redirect');
+            if (typeof url === 'string' && url.indexOf('web3.okx.com') !== -1) {
+                // OKX SDK uses its own protocol (NOT standard WalletConnect).
+                // web3.okx.com/ul/connect?topic=X is OKX's proprietary format.
+                // Only the main OKX app handles this via Universal Links.
+                // OKX Wallet (green) does NOT understand okxwallet://ul/connect deep links.
+                // Solution: always route through tg.openLink → Safari → Universal Link → OKX app.
+                // The wallet address is the same in both apps.
+                console.log('[window.open] web3.okx.com → tg.openLink (Universal Link)');
+                if (window._dbg) window._dbg('[window.open] web3.okx.com → tg.openLink');
                 try {
-                    var parsed = new URL(url);
-                    var topic = parsed.searchParams.get('topic') || '';
-
-                    // Check if display_uri event gave us the full WC URI
-                    var fullWcUri = window._wcUriForWallet || null;
-                    if (window._dbg) window._dbg('wcUri from event: ' + (fullWcUri ? fullWcUri.substring(0, 80) : 'NO'));
-
-                    var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
-                    var redirectUrl;
-                    window._wcUriHandled = true;
-
-                    if (fullWcUri) {
-                        // Full WC URI from display_uri event — wallet can connect!
-                        redirectUrl = redirectBase + '?app=wallet&uri=' + encodeURIComponent(fullWcUri);
-                        if (window._dbg) window._dbg('using event URI → redirect.html');
-                    } else {
-                        // No URI from event — fallback to topic-only (may not work)
-                        var walletDeepLink = 'okxwallet://ul/connect?topic=' + encodeURIComponent(topic);
-                        redirectUrl = redirectBase + '?app=wallet&deeplink=' + encodeURIComponent(walletDeepLink);
-                        if (window._dbg) window._dbg('fallback: topic-only (no event URI)');
-                    }
-
-                    console.log('[window.open] redirectUrl:', redirectUrl);
-                    window.Telegram.WebApp.openLink(redirectUrl, { try_instant_view: false });
+                    window.Telegram.WebApp.openLink(url, { try_instant_view: false });
                 } catch(e) {
-                    console.error('[window.open] web3.okx.com redirect failed:', e.message);
-                    if (window._dbg) window._dbg('redirect error: ' + e.message);
+                    if (window._dbg) window._dbg('openLink error: ' + e.message);
                     if (_origOpen) _origOpen.apply(window, arguments);
                 }
                 return { focus: function(){}, close: function(){} };
@@ -1262,44 +1214,10 @@
                 await initProvider(false);
                 dbg('initProvider done, calling provider.connect() for ' + selectedNetwork);
 
-                // Listen for WC display_uri event — this gives us the FULL WC URI
-                // (topic + symKey) BEFORE the SDK tries to open the wallet.
-                // We block the SDK's own wallet-opening and do it ourselves with
-                // the correct app (OKX Wallet green vs OKX App black).
-                window._wcUriForWallet = null;
-                window._wcUriHandled = false;
-
-                // Hook into provider events — WC v2 emits 'display_uri'
-                try {
-                    var evTarget = provider;
-                    var evNames = ['display_uri', 'uri', 'proposal_uri'];
-                    for (var ei = 0; ei < evNames.length; ei++) {
-                        (function(evName) {
-                            try {
-                                evTarget.on(evName, function(uri) {
-                                    dbg('EVENT ' + evName + ': ' + (uri ? uri.substring(0, 80) : 'null'));
-                                    if (uri && uri.indexOf('wc:') === 0 && !window._wcUriHandled) {
-                                        window._wcUriForWallet = uri;
-                                    }
-                                });
-                            } catch(evErr) {}
-                        })(evNames[ei]);
-                    }
-                    // Also try signClient if available
-                    if (provider.signClient) {
-                        try {
-                            provider.signClient.on('display_uri', function(uri) {
-                                dbg('signClient display_uri: ' + (uri ? uri.substring(0, 80) : 'null'));
-                                if (uri && uri.indexOf('wc:') === 0 && !window._wcUriHandled) {
-                                    window._wcUriForWallet = uri;
-                                }
-                            });
-                        } catch(scErr) {}
-                    }
-                    dbg('WC URI event listeners registered');
-                } catch(hookErr) {
-                    dbg('event hook error: ' + hookErr.message);
-                }
+                // OKX SDK uses its own relay protocol (NOT WalletConnect v2).
+                // web3.okx.com/ul/connect?topic=X is handled via Universal Link
+                // by the main OKX app. tg.openLink() routes through Safari.
+                dbg('OKX proprietary protocol — Universal Link via tg.openLink()');
 
                 // Start continuous relay poller — fires every 2s regardless of visibilitychange
                 startRelayPoller();
