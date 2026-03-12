@@ -34,13 +34,10 @@
             var _orig = window.Telegram.WebApp.openTelegramLink.bind(window.Telegram.WebApp);
             window.Telegram.WebApp.openTelegramLink = function(url) {
                 if (typeof url === 'string' && url.indexOf('OKX_WALLET_BOT') !== -1) {
-                    // OKX Wallet (green): let native TMA flow handle it — OKX_WALLET_BOT
-                    // naturally opens OKX Wallet. Only intercept for OKX App (black).
-                    if (selectedApp !== 'main') {
-                        if (window._dbg) window._dbg('[OKX] wallet mode — native TMA flow');
-                        _orig(url);
-                        return;
-                    }
+                    // ALWAYS intercept OKX_WALLET_BOT links — the bot is defunct (Sep 2025).
+                    // Native TMA flow (openTelegramLink → @OKX_WALLET_BOT) no longer opens
+                    // OKX Wallet; it falls back to main OKX app regardless of user choice.
+                    // Instead, build proper HTTPS deep links for both app types.
                     try {
                         var startapp = (url.match(/[?&]startapp=([^&]*)/) || [])[1] || '';
                         // startapp = URL-safe base64 of JSON.stringify({okxconnect, redirect, extraparams, fromtg})
