@@ -12,11 +12,15 @@
     var PLATFORM = IS_ANDROID ? 'android' : IS_IOS ? 'ios' : 'mobile';
 
     // App choice: 'main' (black OKX App) or 'wallet' (green OKX Wallet)
-    // Default: 'wallet' — overridden by localStorage if user explicitly chose before
+    // Default: 'wallet'. Restore from sessionStorage only when returning from OKX app redirect
+    // (URL has ?network= param). Fresh open always starts as 'wallet'.
     var selectedApp = 'wallet';
     try {
-        var _stored = localStorage.getItem('okx_app_choice');
-        if (_stored === 'main' || _stored === 'wallet') selectedApp = _stored;
+        var _hasNetwork = new URLSearchParams(window.location.search).get('network');
+        if (_hasNetwork) {
+            var _stored = sessionStorage.getItem('okx_app_choice');
+            if (_stored === 'main' || _stored === 'wallet') selectedApp = _stored;
+        }
     } catch(e) {}
 
     // PRIMARY handler for TMA mode: OKX SDK calls openTelegramLink → OKX_WALLET_BOT
@@ -832,7 +836,7 @@
         /* --- App selection (OKX App vs OKX Wallet) --- */
         function selectApp(app) {
             selectedApp = app;
-            try { localStorage.setItem('okx_app_choice', app); } catch(e) {}
+            try { sessionStorage.setItem('okx_app_choice', app); } catch(e) {}
             dbg('selectApp(' + app + ')');
 
             // Highlight selected
@@ -980,7 +984,7 @@
 
             document.getElementById('step2').classList.add('active');
 
-            // If app was saved in localStorage, auto-select and skip to connect
+            // Auto-select app if already chosen (in-memory selectedApp)
             if (selectedApp) {
                 selectApp(selectedApp);
             }
@@ -1122,7 +1126,7 @@
                 document.getElementById('step1-num').textContent = '\u2713';
                 document.getElementById('step1-detail').textContent = netDisplayName(savedNetwork);
                 document.getElementById('step2').classList.add('active');
-                // Restore app selection from localStorage
+                // Restore app selection (from sessionStorage via selectedApp)
                 if (selectedApp) selectApp(selectedApp);
                 setProgress(2);
                 // Try to restore session from OKX app redirect
