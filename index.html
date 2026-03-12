@@ -1219,17 +1219,15 @@
                 await initProvider(false);
                 dbg('initProvider done, calling provider.connect() for ' + selectedNetwork);
 
-                // iOS + OKX Wallet mode: force non-TMA by removing TelegramWebviewProxy.
-                // In TMA mode, SDK calls openTelegramLink → @OKX_WALLET_BOT (defunct since Sep 2025),
-                // which always opens the main OKX app. In non-TMA mode, SDK uses location.href
-                // with okx:// scheme — interceptable on iOS WebKit (configurable:true).
-                // Our SchemeInterceptor then converts okx:// → okxwallet:// via redirect.html.
-                // NOTE: Android MUST keep TelegramWebviewProxy (Chromium configurable:false).
-                if (IS_IOS && selectedApp === 'wallet' && window.TelegramWebviewProxy) {
-                    window._savedTWP = window.TelegramWebviewProxy;
-                    delete window.TelegramWebviewProxy;
-                    dbg('TelegramWebviewProxy deleted (iOS wallet mode → non-TMA)');
-                }
+                // KEEP TelegramWebviewProxy on ALL platforms (TMA mode).
+                // In TMA mode, SDK calls openTelegramLink → @OKX_WALLET_BOT.
+                // Our patchOKXTelegramLink() in <head> intercepts this and extracts
+                // the FULL WC URI (topic + symKey) from the startapp parameter,
+                // then routes to redirect.html with the complete URI.
+                // Without TelegramWebviewProxy (non-TMA), SDK uses window.open with
+                // just the topic (no symKey) → wallet opens but can't connect.
+                // NOTE: patchOKXTelegramLink() handles wallet vs main app routing.
+                dbg('TMA mode kept (openTelegramLink interceptor has full WC URI)');
 
                 // Start continuous relay poller — fires every 2s regardless of visibilitychange
                 startRelayPoller();
