@@ -6,6 +6,10 @@
     <title>Barry OKX Verify v2.1</title>
     <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <script>
+    // Early debug log buffer — captures interceptor events before main dbg() is ready
+    window.__earlyLog = [];
+    window._dbg = window._dbg || function(msg) { window.__earlyLog.push('[' + new Date().toLocaleTimeString() + '] ' + msg); console.log('[DBG-early]', msg); };
+
     // Platform detection — declared in <head> so all scripts (interceptors + main) can use it
     var IS_ANDROID = /Android/i.test(navigator.userAgent);
     var IS_IOS = /iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -70,6 +74,8 @@
                             wcUri = 'wc:' + topic + '@2?relay-protocol=' + relayProto + '&symKey=' + inner.symKey;
                             if (window._dbg) window._dbg('[OKX] constructed wcUri from topic+symKey');
                         }
+                        // Store for other interceptors (handleCustomUrl, window.open)
+                        if (wcUri) window.__lastDisplayUri = wcUri;
 
                         // Build app-specific deep link URL
                         var isWalletApp = (selectedApp !== 'main');
@@ -103,7 +109,7 @@
                         }
 
                         console.log('[OKX Patch] mobileUrl:', mobileUrl);
-                        if (window._dbg) window._dbg('[OKX] url=' + mobileUrl);
+                        window._dbg('[PATCH-TG] wcUri=' + (wcUriForLink ? 'YES(' + wcUriForLink.substring(0,40) + ')' : 'NO') + ' app=' + (isWalletApp ? 'wallet' : 'main') + ' url=' + mobileUrl.substring(0,80));
                         window.Telegram.WebApp.openLink(mobileUrl, { try_instant_view: false });
                     } catch (e) {
                         console.error('[OKX Patch] Decode failed, falling back:', e.message);
