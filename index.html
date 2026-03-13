@@ -92,16 +92,6 @@
                         var wcUriForLink = wcUri || (topic.indexOf('wc:') === 0 ? topic : null);
                         var mobileUrl;
 
-                        if (!isWalletApp && IS_IOS) {
-                            // BLACK APP iOS: DON'T open anything here.
-                            // Suppress the defunct OKX_WALLET_BOT link, store wcUri for later.
-                            // SDK will fall through to window.open('https://web3.okx.com/ul/connect?topic=X')
-                            // which our window.open interceptor routes via tg.openLink() — the original
-                            // Universal Link opens the black OKX app with native WC handshake.
-                            window._dbg('[PATCH-TG] BLACK iOS: SUPPRESS openTelegramLink, let SDK fall through to window.open');
-                            return; // ← suppress, don't call _orig or openLink
-                        }
-
                         if (isWalletApp && (IS_ANDROID || IS_IOS) && wcUriForLink) {
                             // OKX Wallet (green): redirect.html → okxwallet:// custom scheme
                             var currentPage = (typeof window !== 'undefined' && window.location) ? window.location.href : '';
@@ -112,6 +102,10 @@
                             var currentPage = (typeof window !== 'undefined' && window.location) ? window.location.href : '';
                             var redirectBase = currentPage.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
                             mobileUrl = redirectBase + '?app=okx&uri=' + encodeURIComponent(wcUriForLink);
+                        } else if (!isWalletApp && IS_IOS && wcUriForLink) {
+                            // Main OKX app (black) iOS: www.okx.com Universal Link with full WC URI
+                            // www.okx.com AASA → black OKX app (not green wallet)
+                            mobileUrl = 'https://www.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUriForLink);
                         } else {
                             // Fallback: download page
                             var scheme = isWalletApp ? 'okxwallet' : 'okx';
@@ -125,7 +119,8 @@
 
                         console.log('[OKX Patch] mobileUrl:', mobileUrl);
                         window._dbg('[PATCH-TG] wcUri=' + (wcUriForLink ? 'YES(' + wcUriForLink.substring(0,40) + ')' : 'NO') + ' app=' + (isWalletApp ? 'wallet' : 'main') + ' url=' + mobileUrl.substring(0,80));
-                        window.__deepLinkFired = true;
+                        // Guard: green wallet works with single shot. Black iOS needs double-fire.
+                        if (isWalletApp || IS_ANDROID) window.__deepLinkFired = true;
                         window.Telegram.WebApp.openLink(mobileUrl, { try_instant_view: false });
                     } catch (e) {
                         console.error('[OKX Patch] Decode failed, falling back:', e.message);
@@ -205,9 +200,9 @@
                         // BLACK APP iOS: enhance with full WC URI (symKey needed for handshake)
                         var wcUri = window.__lastDisplayUri || null;
                         var enhancedUrl = (wcUri && wcUri.indexOf('wc:') === 0)
-                            ? 'https://web3.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUri)
+                            ? 'https://www.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUri)
                             : url;
-                        if (window._dbg) window._dbg('INTERCEPT[scheme] BLACK iOS: ' + (wcUri ? 'enhanced' : 'passthrough') + ' UL=' + enhancedUrl.substring(0, 80));
+                        if (window._dbg) window._dbg('INTERCEPT[scheme] BLACK iOS: ' + (wcUri ? 'enhanced www' : 'passthrough') + ' UL=' + enhancedUrl.substring(0, 80));
                         try {
                             window.Telegram.WebApp.openLink(enhancedUrl, { try_instant_view: false });
                         } catch (e3) {}
@@ -337,8 +332,8 @@
                         var wcUri = window.__lastDisplayUri || null;
                         var enhancedUrl;
                         if (wcUri && wcUri.indexOf('wc:') === 0) {
-                            enhancedUrl = 'https://web3.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUri);
-                            if (window._dbg) window._dbg('INTERCEPT[open] BLACK iOS: enhanced UL with symKey');
+                            enhancedUrl = 'https://www.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUri);
+                            if (window._dbg) window._dbg('INTERCEPT[open] BLACK iOS: enhanced www.okx.com UL');
                         } else {
                             enhancedUrl = url; // fallback: original topic-only
                             if (window._dbg) window._dbg('INTERCEPT[open] BLACK iOS: no wcUri, passthrough');
