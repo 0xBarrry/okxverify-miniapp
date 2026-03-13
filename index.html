@@ -87,25 +87,21 @@
                         var wcUriForLink = wcUri || (topic.indexOf('wc:') === 0 ? topic : null);
                         var mobileUrl;
 
-                        if ((IS_ANDROID || IS_IOS) && isWalletApp && wcUriForLink) {
-                            // OKX Wallet: use redirect.html with custom scheme (okxwallet://)
-                            // Universal Links (web3.okx.com) don't reliably open OKX Wallet
-                            var appType = 'wallet';
+                        if ((IS_ANDROID || IS_IOS) && wcUriForLink) {
+                            // Both apps: use redirect.html with custom scheme
+                            // redirect.html handles app=wallet (okxwallet://) and app=okx (okx://)
+                            var appType = isWalletApp ? 'wallet' : 'okx';
                             var currentPage = (typeof window !== 'undefined' && window.location) ? window.location.href : '';
                             var redirectBase = currentPage.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
                             mobileUrl = redirectBase + '?app=' + appType + '&uri=' + encodeURIComponent(wcUriForLink);
-                        } else if (isWalletApp) {
-                            var scheme = 'okxwallet';
-                            var deepLink = wcUriForLink
-                                ? scheme + '://ul/v1/wc?uri=' + encodeURIComponent(wcUriForLink)
-                                : scheme + '://ul/connect?topic=' + encodeURIComponent(topic);
-                            mobileUrl = 'https://web3.okx.com/download?deeplink=' + encodeURIComponent(deepLink);
                         } else {
-                            var scheme = 'okx';
+                            var scheme = isWalletApp ? 'okxwallet' : 'okx';
                             var deepLink = wcUriForLink
                                 ? scheme + '://ul/v1/wc?uri=' + encodeURIComponent(wcUriForLink)
                                 : scheme + '://ul/connect?topic=' + encodeURIComponent(topic);
-                            mobileUrl = 'https://www.okx.com/download?deep_link=' + encodeURIComponent(deepLink);
+                            var domain = isWalletApp ? 'web3.okx.com' : 'www.okx.com';
+                            var dlParam = isWalletApp ? 'deeplink' : 'deep_link';
+                            mobileUrl = 'https://' + domain + '/download?' + dlParam + '=' + encodeURIComponent(deepLink);
                         }
 
                         console.log('[OKX Patch] mobileUrl:', mobileUrl);
@@ -180,22 +176,17 @@
                 if (topicMatch) {
                     var topic = topicMatch[1];
                     var isWallet = (selectedApp !== 'main');
-                    if (!isWallet) {
-                        // Main OKX app: Universal Link directly (don't redirect)
-                        if (window._dbg) window._dbg('→ tg.openLink (main UL): ' + url.substring(0, 80));
-                        try { window.Telegram.WebApp.openLink(url, { try_instant_view: false }); } catch(e3) {}
-                        return true;
-                    }
-                    var deepLink = getDeepLink(topic, true);
+                    var appType = isWallet ? 'wallet' : 'okx';
+                    var deepLink = getDeepLink(topic, isWallet);
                     var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
-                    var openUrl = redirectBase + '?deeplink=' + encodeURIComponent(deepLink) + '&app=wallet';
-                    if (window._dbg) window._dbg('INTERCEPT[scheme] dl=' + deepLink.substring(0, 70));
+                    var openUrl = redirectBase + '?deeplink=' + encodeURIComponent(deepLink) + '&app=' + appType;
+                    if (window._dbg) window._dbg('INTERCEPT[scheme] app=' + appType + ' dl=' + deepLink.substring(0, 70));
                     try {
                         window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
                     } catch (e3) {}
                     return true;
                 }
-                // No topic — pass through as Universal Link
+                // No topic — pass through
                 if (window._dbg) window._dbg('→ tg.openLink (raw web3): ' + url.substring(0, 80));
                 try {
                     window.Telegram.WebApp.openLink(url, { try_instant_view: false });
@@ -308,23 +299,18 @@
                 if (topicMatch) {
                     var topic = topicMatch[1];
                     var isWallet = (selectedApp !== 'main');
-                    if (!isWallet) {
-                        // Main OKX app: Universal Link directly
-                        if (window._dbg) window._dbg('[window.open] → main UL: ' + url.substring(0, 80));
-                        try { window.Telegram.WebApp.openLink(url, { try_instant_view: false }); } catch(e) {}
-                        return { focus: function(){}, close: function(){} };
-                    }
-                    var deepLink = getDeepLink(topic, true);
+                    var appType = isWallet ? 'wallet' : 'okx';
+                    var deepLink = getDeepLink(topic, isWallet);
                     var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
-                    var openUrl = redirectBase + '?deeplink=' + encodeURIComponent(deepLink) + '&app=wallet';
-                    if (window._dbg) window._dbg('INTERCEPT[open] dl=' + deepLink.substring(0, 70));
+                    var openUrl = redirectBase + '?deeplink=' + encodeURIComponent(deepLink) + '&app=' + appType;
+                    if (window._dbg) window._dbg('INTERCEPT[open] app=' + appType + ' dl=' + deepLink.substring(0, 70));
                     try {
                         window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
                     } catch(e) {}
                     return { focus: function(){}, close: function(){} };
                 }
-                // No topic — pass through as Universal Link
-                if (window._dbg) window._dbg('[window.open] → main OKX: ' + url.substring(0, 80));
+                // No topic — pass through
+                if (window._dbg) window._dbg('[window.open] → raw: ' + url.substring(0, 80));
                 try {
                     window.Telegram.WebApp.openLink(url, { try_instant_view: false });
                 } catch(e) {
