@@ -103,10 +103,13 @@
                             var redirectBase = currentPage.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
                             mobileUrl = redirectBase + '?app=okx&uri=' + encodeURIComponent(wcUriForLink);
                         } else if (!isWalletApp && IS_IOS && wcUriForLink) {
-                            // Main OKX app (black) iOS: www.okx.com/walletappconnect Universal Link
-                            // AASA has /walletappconnect/* registered ONLY for main OKX app
-                            // Pass full WC URI so the app can complete the handshake
-                            mobileUrl = 'https://www.okx.com/walletappconnect/wc?uri=' + encodeURIComponent(wcUriForLink);
+                            // Main OKX app (black) iOS: redirect.html → okx:// custom scheme
+                            // Same approach as green wallet (which works!) but with okx:// scheme.
+                            // Previous Universal Link attempts all failed with "connection unsuccessful".
+                            // Custom scheme delivers the WC URI directly to the app's URL handler.
+                            var currentPage = (typeof window !== 'undefined' && window.location) ? window.location.href : '';
+                            var redirectBase = currentPage.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
+                            mobileUrl = redirectBase + '?app=okx&uri=' + encodeURIComponent(wcUriForLink);
                         } else {
                             // Fallback: download page
                             var scheme = isWalletApp ? 'okxwallet' : 'okx';
@@ -1360,7 +1363,7 @@
                                 events: []
                             }
                         },
-                        sessionConfig: { redirect: "tg://resolve" }
+                        sessionConfig: { redirect: "tg://resolve", tmaReturnUrl: "back" }
                     });
                     dbg('solana session received, namespaces: ' + Object.keys(session.namespaces || {}).join(', '));
                     const ns = session.namespaces.solana || session.namespaces[SOLANA_CHAIN];
@@ -1377,7 +1380,7 @@
                                 defaultChain: "1"
                             }
                         },
-                        sessionConfig: { redirect: "tg://resolve" }
+                        sessionConfig: { redirect: "tg://resolve", tmaReturnUrl: "back" }
                     });
                     dbg('evm session received');
                     const accounts = session.namespaces.eip155.accounts;
