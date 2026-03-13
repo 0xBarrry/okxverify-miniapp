@@ -103,13 +103,12 @@
                             var redirectBase = currentPage.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
                             mobileUrl = redirectBase + '?app=okx&uri=' + encodeURIComponent(wcUriForLink);
                         } else if (!isWalletApp && IS_IOS && wcUriForLink) {
-                            // Main OKX app (black) iOS: redirect.html → okx:// custom scheme
-                            // Same approach as green wallet (which works!) but with okx:// scheme.
-                            // Previous Universal Link attempts all failed with "connection unsuccessful".
-                            // Custom scheme delivers the WC URI directly to the app's URL handler.
-                            var currentPage = (typeof window !== 'undefined' && window.location) ? window.location.href : '';
-                            var redirectBase = currentPage.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
-                            mobileUrl = redirectBase + '?app=okx&uri=' + encodeURIComponent(wcUriForLink);
+                            // Main OKX app (black) iOS: Universal Link www.okx.com/download/link
+                            // okx:// custom scheme NOT registered on iOS.
+                            // /download/link ensures AASA /download/* pattern match.
+                            // deeplink param (no underscore) matches barry-v2 secondary interceptor.
+                            var okxDL = 'okx://ul/v1/wc?uri=' + encodeURIComponent(wcUriForLink);
+                            mobileUrl = 'https://www.okx.com/download/link?deeplink=' + encodeURIComponent(okxDL);
                         } else {
                             // Fallback: download page
                             var scheme = isWalletApp ? 'okxwallet' : 'okx';
@@ -201,12 +200,11 @@
                     var topic = topicMatch[1];
                     var isWallet = (selectedApp !== 'main');
                     if (!isWallet && IS_IOS) {
-                        // BLACK APP iOS: use getDeepLink() for keychain extraction
+                        // BLACK APP iOS: keychain extraction + Universal Link
                         var deepLink = getDeepLink(topic, false);
                         var hasFullWc = deepLink.indexOf('/ul/v1/wc?uri=') !== -1;
                         if (window._dbg) window._dbg('INTERCEPT[scheme] BLACK iOS: getDeepLink=' + (hasFullWc ? 'FULL' : 'topic-only'));
-                        var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
-                        var openUrl = redirectBase + '?deeplink=' + encodeURIComponent(deepLink) + '&app=okx';
+                        var openUrl = 'https://www.okx.com/download/link?deeplink=' + encodeURIComponent(deepLink);
                         try {
                             window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
                         } catch (e3) {}
@@ -332,12 +330,12 @@
                         // BLACK APP iOS: SDK fires window.open BEFORE openTelegramLink,
                         // so __lastDisplayUri is not populated yet. Use getDeepLink() which
                         // extracts symKey from provider keychain (populated by provider.connect()).
+                        // okx:// custom scheme NOT registered on iOS → use Universal Link.
+                        // Path /download/link matches AASA /download/* pattern.
                         var deepLink = getDeepLink(topic, false); // false = not wallet → okx:// scheme
                         var hasFullWc = deepLink.indexOf('/ul/v1/wc?uri=') !== -1;
                         if (window._dbg) window._dbg('INTERCEPT[open] BLACK iOS: getDeepLink=' + (hasFullWc ? 'FULL' : 'topic-only') + ' dl=' + deepLink.substring(0, 70));
-                        // Route through redirect.html → okx:// custom scheme
-                        var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
-                        var openUrl = redirectBase + '?deeplink=' + encodeURIComponent(deepLink) + '&app=okx';
+                        var openUrl = 'https://www.okx.com/download/link?deeplink=' + encodeURIComponent(deepLink);
                         try {
                             window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
                         } catch(e) {}
