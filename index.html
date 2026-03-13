@@ -202,14 +202,10 @@
                     var deepLink = getDeepLink(topic, isWallet);
                     var appType = isWallet ? 'wallet' : 'okx';
                     var openUrl;
-                    if (!isWallet && IS_IOS) {
-                        // Black app iOS: www.okx.com/download (same as barry-v2 handleCustomUrl)
-                        openUrl = 'https://www.okx.com/download?deeplink=' + encodeURIComponent(deepLink);
-                    } else {
-                        // Green wallet (both) + black app Android: redirect.html
-                        var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
-                        openUrl = redirectBase + '?deeplink=' + encodeURIComponent(deepLink) + '&app=' + appType;
-                    }
+                    // barry-v2 pattern: ALL apps go through redirect.html here
+                    // (only iOS+wallet+hasFullWc uses Universal Link — we don't need that)
+                    var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
+                    var openUrl = redirectBase + '?deeplink=' + encodeURIComponent(deepLink) + '&app=' + appType;
                     if (window._dbg) window._dbg('INTERCEPT[scheme] app=' + appType + ' ios=' + IS_IOS + ' dl=' + deepLink.substring(0, 70));
                     try {
                         window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
@@ -249,29 +245,15 @@
                 var deepLink = wcUri
                     ? scheme + '://ul/v1/wc?uri=' + encodeURIComponent(wcUri)
                     : url;
-                if (IS_ANDROID || (IS_IOS && isWalletApp)) {
-                    // Android: intent:// via redirect.html (Chrome handles intent URIs by package name)
-                    // iOS + OKX Wallet: redirect.html with custom scheme (okxwallet://)
-                    // — Universal Links (web3.okx.com) don't reliably open OKX Wallet on iOS
-                    var appType = isWalletApp ? 'wallet' : 'okx';
-                    var wcParam = wcUri || url;
-                    var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
-                    openUrl = redirectBase + '?app=' + appType + '&uri=' + encodeURIComponent(wcParam);
-                    console.log('[SchemeInterceptor] → redirect (' + PLATFORM + ', ' + appType + ')');
-                    if (window._dbg) window._dbg('redirect: ' + PLATFORM + '/' + appType);
-                    window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
-                } else {
-                    // iOS + OKX App (main): www.okx.com/download Universal Link (barry-v2 pattern)
-                    var isWalletApp = (selectedApp !== 'main');
-                    var schm = isWalletApp ? 'okxwallet' : 'okx';
-                    var dl = wcUri
-                        ? schm + '://ul/v1/wc?uri=' + encodeURIComponent(wcUri)
-                        : url;
-                    openUrl = 'https://www.okx.com/download?deeplink=' + encodeURIComponent(dl);
-                    console.log('[SchemeInterceptor] → www.okx.com/download (iOS)');
-                    if (window._dbg) window._dbg('DL: www.okx.com/download deeplink');
-                    window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
-                }
+                // ALL platforms + ALL apps: redirect.html (barry-v2 pattern)
+                // redirect.html handles okx:// custom scheme on iOS + intent:// on Android
+                var appType = isWalletApp ? 'wallet' : 'okx';
+                var wcParam = wcUri || url;
+                var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
+                openUrl = redirectBase + '?app=' + appType + '&uri=' + encodeURIComponent(wcParam);
+                console.log('[SchemeInterceptor] → redirect (' + PLATFORM + ', ' + appType + ')');
+                if (window._dbg) window._dbg('redirect: ' + PLATFORM + '/' + appType);
+                window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
             } catch (e) {
                 console.error('[SchemeInterceptor] openLink failed:', e.message);
                 if (window._dbg) window._dbg('openLink error: ' + e.message);
@@ -338,14 +320,9 @@
                     var isWallet = (selectedApp !== 'main');
                     var deepLink = getDeepLink(topic, isWallet);
                     var appType = isWallet ? 'wallet' : 'okx';
-                    var openUrl;
-                    if (!isWallet && IS_IOS) {
-                        // Black app iOS: www.okx.com/download (barry-v2 pattern)
-                        openUrl = 'https://www.okx.com/download?deeplink=' + encodeURIComponent(deepLink);
-                    } else {
-                        var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
-                        openUrl = redirectBase + '?deeplink=' + encodeURIComponent(deepLink) + '&app=' + appType;
-                    }
+                    // barry-v2 pattern: ALL apps go through redirect.html
+                    var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
+                    var openUrl = redirectBase + '?deeplink=' + encodeURIComponent(deepLink) + '&app=' + appType;
                     if (window._dbg) window._dbg('INTERCEPT[open] app=' + appType + ' ios=' + IS_IOS + ' dl=' + deepLink.substring(0, 70));
                     try {
                         window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
