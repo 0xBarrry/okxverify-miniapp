@@ -81,6 +81,8 @@
                         }
                         // Store for other interceptors (handleCustomUrl, window.open)
                         if (wcUri) window.__lastDisplayUri = wcUri;
+                        // Cache full connect request for ?param= deep link format (black app iOS)
+                        window.__okxConnectRequest = inner;
 
                         // Build app-specific deep link URL
                         var isWalletApp = (selectedApp !== 'main');
@@ -103,10 +105,15 @@
                             var redirectBase = currentPage.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
                             mobileUrl = redirectBase + '?app=okx&uri=' + encodeURIComponent(wcUriForLink);
                         } else if (!isWalletApp && IS_IOS) {
-                            // Main OKX app (black) iOS: Universal Link via link.okx.com
-                            // SDK natively uses https://link.okx.com/ul/connect?topic=X (NOT www.okx.com!)
-                            // AASA on link.okx.com registers com.okex.OKExAppstoreFull under /ul/*
-                            mobileUrl = 'https://link.okx.com/ul/connect?topic=' + encodeURIComponent(topic);
+                            // Main OKX app (black) iOS: Universal Link with ?param= payload.
+                            // link.okx.com Universal Link opens the black app (AASA confirmed).
+                            // ?param= carries full connect request inline (self-contained, no relay needed).
+                            // inner has: topic, clientId, requestId, dAppInfo, requests, redirect.
+                            var connectReq = JSON.parse(JSON.stringify(inner));
+                            connectReq.protocolVersion = 2;
+                            var paramB64 = btoa(JSON.stringify(connectReq));
+                            mobileUrl = 'https://link.okx.com/ul/connect?param=' + encodeURIComponent(paramB64);
+                            if (window._dbg) window._dbg('[PATCH-TG] BLACK iOS: link.okx.com?param= keys=' + Object.keys(connectReq).join(','));
                         } else {
                             // Fallback: download page
                             var scheme = isWalletApp ? 'okxwallet' : 'okx';
@@ -198,10 +205,18 @@
                     var topic = topicMatch[1];
                     var isWallet = (selectedApp !== 'main');
                     if (!isWallet && IS_IOS) {
-                        // BLACK APP iOS: link.okx.com Universal Link (SDK native format)
-                        // AASA on link.okx.com has com.okex.OKExAppstoreFull under /ul/*
-                        var openUrl = 'https://link.okx.com/ul/connect?topic=' + encodeURIComponent(topic);
-                        if (window._dbg) window._dbg('INTERCEPT[scheme] BLACK iOS: link.okx.com topic=' + topic.substring(0, 16));
+                        // BLACK APP iOS: Universal Link with ?param= payload or topic fallback
+                        var openUrl;
+                        if (window.__okxConnectRequest) {
+                            var cr = JSON.parse(JSON.stringify(window.__okxConnectRequest));
+                            cr.protocolVersion = 2;
+                            var paramB64 = btoa(JSON.stringify(cr));
+                            openUrl = 'https://link.okx.com/ul/connect?param=' + encodeURIComponent(paramB64);
+                            if (window._dbg) window._dbg('INTERCEPT[scheme] BLACK iOS: link.okx.com?param=');
+                        } else {
+                            openUrl = 'https://link.okx.com/ul/connect?topic=' + encodeURIComponent(topic);
+                            if (window._dbg) window._dbg('INTERCEPT[scheme] BLACK iOS: link.okx.com?topic= fallback');
+                        }
                         try {
                             window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
                         } catch (e3) {}
@@ -324,12 +339,18 @@
                     var topic = topicMatch[1];
                     var isWallet = (selectedApp !== 'main');
                     if (!isWallet && IS_IOS) {
-                        // BLACK APP iOS: link.okx.com Universal Link (SDK native format)
-                        // SDK natively uses https://link.okx.com/ul/connect?topic=X
-                        // AASA on link.okx.com has com.okex.OKExAppstoreFull under /ul/*
-                        // Topic from web3.okx.com URL already includes MD5 suffix from SDK
-                        var openUrl = 'https://link.okx.com/ul/connect?topic=' + encodeURIComponent(topic);
-                        if (window._dbg) window._dbg('INTERCEPT[open] BLACK iOS: link.okx.com topic=' + topic.substring(0, 16));
+                        // BLACK APP iOS: Universal Link with ?param= payload or topic fallback
+                        var openUrl;
+                        if (window.__okxConnectRequest) {
+                            var cr = JSON.parse(JSON.stringify(window.__okxConnectRequest));
+                            cr.protocolVersion = 2;
+                            var paramB64 = btoa(JSON.stringify(cr));
+                            openUrl = 'https://link.okx.com/ul/connect?param=' + encodeURIComponent(paramB64);
+                            if (window._dbg) window._dbg('INTERCEPT[open] BLACK iOS: link.okx.com?param=');
+                        } else {
+                            openUrl = 'https://link.okx.com/ul/connect?topic=' + encodeURIComponent(topic);
+                            if (window._dbg) window._dbg('INTERCEPT[open] BLACK iOS: link.okx.com?topic= fallback');
+                        }
                         try {
                             window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
                         } catch(e) {}
