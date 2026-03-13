@@ -103,9 +103,9 @@
                             var redirectBase = currentPage.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
                             mobileUrl = redirectBase + '?app=okx&uri=' + encodeURIComponent(wcUriForLink);
                         } else if (!isWalletApp && IS_IOS && wcUriForLink) {
-                            // Main OKX app (black) iOS: www.okx.com/download Universal Link
-                            var deepLink = 'okx://ul/v1/wc?uri=' + encodeURIComponent(wcUriForLink);
-                            mobileUrl = 'https://www.okx.com/download?deep_link=' + encodeURIComponent(deepLink);
+                            // Main OKX app (black) iOS: Universal Link www.okx.com/ul/v1/wc
+                            // AASA has /ul/* registered → opens black app directly with WC URI
+                            mobileUrl = 'https://www.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUriForLink);
                         } else {
                             // Fallback: download page
                             var scheme = isWalletApp ? 'okxwallet' : 'okx';
@@ -199,8 +199,11 @@
                     var appType = isWallet ? 'wallet' : 'okx';
                     var openUrl;
                     if (!isWallet && IS_IOS) {
-                        // Black app iOS: www.okx.com/download Universal Link (proven flow from barry-v2)
-                        openUrl = 'https://www.okx.com/download?deep_link=' + encodeURIComponent(deepLink);
+                        // Black app iOS: extract WC URI from deepLink, use /ul Universal Link
+                        var wcMatch = deepLink.match(/[?&]uri=([^&]+)/);
+                        openUrl = wcMatch
+                            ? 'https://www.okx.com/ul/v1/wc?uri=' + wcMatch[1]
+                            : 'https://www.okx.com/ul/v1/wc?uri=' + encodeURIComponent(deepLink);
                     } else {
                         // Green wallet (both) + black app Android: redirect.html
                         var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
@@ -257,13 +260,12 @@
                     if (window._dbg) window._dbg('redirect: ' + PLATFORM + '/' + appType);
                     window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
                 } else {
-                    // iOS + OKX App (main): www.okx.com/download?deep_link=okx://...
-                    // (proven flow from barry-v2 — OKX's download page handles the redirect)
+                    // iOS + OKX App (main): Universal Link www.okx.com/ul/v1/wc
                     openUrl = wcUri
-                        ? 'https://www.okx.com/download?deep_link=' + encodeURIComponent('okx://ul/v1/wc?uri=' + encodeURIComponent(wcUri))
-                        : 'https://www.okx.com/download?deep_link=' + encodeURIComponent(url);
-                    console.log('[SchemeInterceptor] → okx download link (iOS)');
-                    if (window._dbg) window._dbg('DL: www.okx.com/download');
+                        ? 'https://www.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUri)
+                        : 'https://www.okx.com/ul/v1/wc?uri=' + encodeURIComponent(url);
+                    console.log('[SchemeInterceptor] → UL www.okx.com/ul (iOS)');
+                    if (window._dbg) window._dbg('UL: www.okx.com/ul');
                     window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
                 }
             } catch (e) {
@@ -334,8 +336,11 @@
                     var appType = isWallet ? 'wallet' : 'okx';
                     var openUrl;
                     if (!isWallet && IS_IOS) {
-                        // Black app iOS: www.okx.com/download Universal Link
-                        openUrl = 'https://www.okx.com/download?deep_link=' + encodeURIComponent(deepLink);
+                        // Black app iOS: Universal Link www.okx.com/ul
+                        var wcMatch = deepLink.match(/[?&]uri=([^&]+)/);
+                        openUrl = wcMatch
+                            ? 'https://www.okx.com/ul/v1/wc?uri=' + wcMatch[1]
+                            : 'https://www.okx.com/ul/v1/wc?uri=' + encodeURIComponent(deepLink);
                     } else {
                         var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
                         openUrl = redirectBase + '?deeplink=' + encodeURIComponent(deepLink) + '&app=' + appType;
