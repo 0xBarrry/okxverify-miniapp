@@ -125,6 +125,54 @@
     //   Android: Intent.ACTION_VIEW → OKX app via App Links (www.okx.com/download?deep_link=...)
     //   iOS: Universal Links (web3.okx.com/ul/v1/wc?uri=...) → OKX app
     (function patchCustomSchemeNavigation() {
+        function _sleep(ms) {
+            return new Promise(function(resolve) { setTimeout(resolve, ms); });
+        }
+
+        // Extract full WC URI (with symKey) from provider keychain.
+        // Mirrors barry-v2's extractFullWcUri — tries keychain[topic] with retries.
+        async function buildDeepLinkFromTopic(topic, isWallet) {
+            var scheme = isWallet ? 'okxwallet' : 'okx';
+            // 1. Try display_uri (captured from SDK event)
+            var displayUri = window.__lastDisplayUri || null;
+            if (displayUri && displayUri.indexOf('wc:') === 0) {
+                var dl = scheme + '://ul/v1/wc?uri=' + encodeURIComponent(displayUri);
+                if (window._dbg) window._dbg('buildDL: display_uri → ' + dl.substring(0, 70));
+                return dl;
+            }
+            // 2. Try keychain extraction (provider.client.core.crypto.keychain)
+            for (var i = 0; i < 4; i++) {
+                try {
+                    var p = window.__okxProvider;
+                    if (p && p.client && p.client.core && p.client.core.crypto && p.client.core.crypto.keychain) {
+                        var kc = p.client.core.crypto.keychain;
+                        var symKey = kc[topic] || null;
+                        if (!symKey) {
+                            var keys = Object.keys(kc);
+                            if (keys.length > 0) {
+                                // Use last key as fallback (most recent pairing)
+                                symKey = kc[keys[keys.length - 1]];
+                                if (window._dbg) window._dbg('buildDL: keychain fallback key=' + keys[keys.length - 1].substring(0, 15));
+                            }
+                        }
+                        if (symKey) {
+                            var wcUri = 'wc:' + topic + '@2?relay-protocol=irn&symKey=' + symKey;
+                            var dl = scheme + '://ul/v1/wc?uri=' + encodeURIComponent(wcUri);
+                            if (window._dbg) window._dbg('buildDL: keychain → ' + dl.substring(0, 70));
+                            return dl;
+                        }
+                    }
+                } catch (e) {}
+                await _sleep(120);
+            }
+            // 3. Fallback: topic-only (may cause "connection unsuccessful")
+            var fallback = isWallet
+                ? scheme + '://web3/wallet/connect?topic=' + topic
+                : scheme + '://ul/connect?topic=' + topic;
+            if (window._dbg) window._dbg('buildDL: fallback topic-only → ' + fallback.substring(0, 70));
+            return fallback;
+        }
+
         function handleCustomUrl(url) {
             if (!url || typeof url !== 'string') return false;
             var scheme;
@@ -134,32 +182,23 @@
             // For OKX Wallet (green): build okxwallet://web3/wallet/connect?topic=X
             // and route through redirect.html (Safari → location.href → custom scheme → green app).
             if (scheme === 'https:' && url.indexOf('web3.okx.com') !== -1) {
-                if (selectedApp !== 'main') {
-                    // OKX Wallet (green): try display_uri first, then topic-based deep link
-                    var displayUri = window.__lastDisplayUri || null;
-                    if (displayUri && displayUri.indexOf('wc:') === 0) {
-                        var walletDeepLink = 'okxwallet://ul/v1/wc?uri=' + encodeURIComponent(displayUri);
-                        var redirectUrl = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html')
-                            + '?deeplink=' + encodeURIComponent(walletDeepLink) + '&app=wallet';
-                        if (window._dbg) window._dbg('→ redirect (display_uri) → ' + walletDeepLink.substring(0, 80));
+                var topicMatch = url.match(/[?&]topic=([^&]+)/);
+                if (topicMatch) {
+                    var topic = topicMatch[1];
+                    var isWallet = (selectedApp !== 'main');
+                    var appType = isWallet ? 'wallet' : 'okx';
+                    (async function() {
+                        var deepLink = await buildDeepLinkFromTopic(topic, isWallet);
+                        var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
+                        var openUrl = redirectBase + '?deeplink=' + encodeURIComponent(deepLink) + '&app=' + appType;
+                        if (window._dbg) window._dbg('INTERCEPT[scheme] app=' + appType + ' dl=' + deepLink.substring(0, 70));
                         try {
-                            window.Telegram.WebApp.openLink(redirectUrl, { try_instant_view: false });
-                        } catch(e3) { return false; }
-                        return true;
-                    }
-                    var topicMatch = url.match(/[?&](topic=[^&]+.*)/);
-                    if (topicMatch) {
-                        var walletDeepLink = 'okxwallet://web3/wallet/connect?' + topicMatch[1];
-                        var redirectUrl = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html')
-                            + '?deeplink=' + encodeURIComponent(walletDeepLink) + '&app=wallet';
-                        if (window._dbg) window._dbg('→ redirect → ' + walletDeepLink.substring(0, 80));
-                        try {
-                            window.Telegram.WebApp.openLink(redirectUrl, { try_instant_view: false });
-                        } catch(e3) { return false; }
-                        return true;
-                    }
+                            window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
+                        } catch (e3) {}
+                    })();
+                    return true;
                 }
-                // Main OKX app: Universal Link directly
+                // No topic — pass through as Universal Link
                 if (window._dbg) window._dbg('→ tg.openLink (main): ' + url.substring(0, 80));
                 try {
                     window.Telegram.WebApp.openLink(url, { try_instant_view: false });
@@ -268,38 +307,23 @@
             // web3.okx.com Universal Link opens MAIN OKX app (black) — we need OKX Wallet (green).
             // Convert to okxwallet:// custom scheme via redirect.html.
             if (typeof url === 'string' && url.indexOf('web3.okx.com') !== -1) {
-                // OKX Wallet (green): redirect.html with custom scheme
-                if (selectedApp !== 'main') {
-                    // Try display_uri first (full WC URI with symKey — most reliable)
-                    var displayUri = window.__lastDisplayUri || null;
-                    if (displayUri && displayUri.indexOf('wc:') === 0) {
-                        var walletDeepLink = 'okxwallet://ul/v1/wc?uri=' + encodeURIComponent(displayUri);
-                        var redirectUrl = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html')
-                            + '?deeplink=' + encodeURIComponent(walletDeepLink) + '&app=wallet';
-                        if (window._dbg) window._dbg('[window.open] → redirect (display_uri) → ' + walletDeepLink.substring(0, 80));
+                var topicMatch = url.match(/[?&]topic=([^&]+)/);
+                if (topicMatch) {
+                    var topic = topicMatch[1];
+                    var isWallet = (selectedApp !== 'main');
+                    var appType = isWallet ? 'wallet' : 'okx';
+                    (async function() {
+                        var deepLink = await buildDeepLinkFromTopic(topic, isWallet);
+                        var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
+                        var openUrl = redirectBase + '?deeplink=' + encodeURIComponent(deepLink) + '&app=' + appType;
+                        if (window._dbg) window._dbg('INTERCEPT[open] app=' + appType + ' dl=' + deepLink.substring(0, 70));
                         try {
-                            window.Telegram.WebApp.openLink(redirectUrl, { try_instant_view: false });
-                        } catch(e) {
-                            if (window._dbg) window._dbg('openLink error: ' + e.message);
-                        }
-                        return { focus: function(){}, close: function(){} };
-                    }
-                    var topicMatch = url.match(/[?&](topic=[^&]+.*)/);
-                    if (topicMatch) {
-                        var walletDeepLink = 'okxwallet://web3/wallet/connect?' + topicMatch[1];
-                        var redirectUrl = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html')
-                            + '?deeplink=' + encodeURIComponent(walletDeepLink) + '&app=wallet';
-                        console.log('[window.open] → redirect.html → okxwallet://', walletDeepLink.substring(0, 80));
-                        if (window._dbg) window._dbg('[window.open] → redirect → ' + walletDeepLink.substring(0, 80));
-                        try {
-                            window.Telegram.WebApp.openLink(redirectUrl, { try_instant_view: false });
-                        } catch(e) {
-                            if (window._dbg) window._dbg('openLink error: ' + e.message);
-                        }
-                        return { focus: function(){}, close: function(){} };
-                    }
+                            window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
+                        } catch(e) {}
+                    })();
+                    return { focus: function(){}, close: function(){} };
                 }
-                // Main OKX app: Universal Link directly
+                // No topic — pass through as Universal Link
                 if (window._dbg) window._dbg('[window.open] → main OKX: ' + url.substring(0, 80));
                 try {
                     window.Telegram.WebApp.openLink(url, { try_instant_view: false });
@@ -1175,6 +1199,9 @@
                     dbg('OKXSolanaProvider init failed: ' + e.message);
                 }
             }
+
+            // Expose provider globally so <head> interceptors can extract symKey
+            window.__okxProvider = provider;
 
             // Capture display_uri — full WC URI with symKey (for interceptors)
             try {
