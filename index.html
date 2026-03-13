@@ -103,9 +103,10 @@
                             var redirectBase = currentPage.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
                             mobileUrl = redirectBase + '?app=okx&uri=' + encodeURIComponent(wcUriForLink);
                         } else if (!isWalletApp && IS_IOS && wcUriForLink) {
-                            // Main OKX app (black) iOS: www.okx.com Universal Link with full WC URI
-                            // www.okx.com AASA → black OKX app (not green wallet)
-                            mobileUrl = 'https://www.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUriForLink);
+                            // Main OKX app (black) iOS: www.okx.com/walletappconnect Universal Link
+                            // AASA has /walletappconnect/* registered ONLY for main OKX app
+                            // Pass full WC URI so the app can complete the handshake
+                            mobileUrl = 'https://www.okx.com/walletappconnect/wc?uri=' + encodeURIComponent(wcUriForLink);
                         } else {
                             // Fallback: download page
                             var scheme = isWalletApp ? 'okxwallet' : 'okx';
@@ -119,8 +120,8 @@
 
                         console.log('[OKX Patch] mobileUrl:', mobileUrl);
                         window._dbg('[PATCH-TG] wcUri=' + (wcUriForLink ? 'YES(' + wcUriForLink.substring(0,40) + ')' : 'NO') + ' app=' + (isWalletApp ? 'wallet' : 'main') + ' url=' + mobileUrl.substring(0,80));
-                        // Guard: green wallet works with single shot. Black iOS needs double-fire.
-                        if (isWalletApp || IS_ANDROID) window.__deepLinkFired = true;
+                        // Guard: single fire for ALL — double-fire may disrupt WC handshake
+                        window.__deepLinkFired = true;
                         window.Telegram.WebApp.openLink(mobileUrl, { try_instant_view: false });
                     } catch (e) {
                         console.error('[OKX Patch] Decode failed, falling back:', e.message);
