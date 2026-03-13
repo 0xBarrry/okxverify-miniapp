@@ -775,6 +775,13 @@
                 </div>
             </div>
 
+            <!-- iOS + black OKX App warning -->
+            <div id="ios-black-warning" style="display:none;margin-top:12px;padding:14px 16px;background:rgba(255,180,0,0.12);border:1px solid rgba(255,180,0,0.3);border-radius:12px;text-align:center">
+                <div style="font-size:15px;color:#ffb400;font-weight:600;margin-bottom:6px">⚠️ Not available on iOS</div>
+                <div style="font-size:13px;color:#aab;line-height:1.5">OKX App connection on iPhone is temporarily unavailable.<br>Please use <strong style="color:#7DF000">OKX Wallet</strong> (green icon) instead — it's lightweight and works perfectly.</div>
+                <button onclick="selectApp('wallet')" style="margin-top:12px;padding:10px 28px;background:#7DF000;color:#000;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">Switch to OKX Wallet</button>
+            </div>
+
             <!-- Connect area (shown after app is selected) -->
             <div id="connect-area" style="display:none">
                 <button id="btn-connect" onclick="connectWallet()">Connect Wallet</button>
@@ -998,8 +1005,17 @@
             document.getElementById('btn-app-main').classList.toggle('selected', app === 'main');
             document.getElementById('btn-app-wallet').classList.toggle('selected', app === 'wallet');
 
-            // Show connect area (keep app selector visible so user can switch)
-            document.getElementById('connect-area').style.display = 'block';
+            // iOS + black OKX App: connection is broken on OKX side (Mar 2026).
+            // Show warning and suggest green OKX Wallet instead.
+            var iosBlackWarning = document.getElementById('ios-black-warning');
+            if (app === 'main' && IS_IOS) {
+                if (iosBlackWarning) iosBlackWarning.style.display = 'block';
+                document.getElementById('connect-area').style.display = 'none';
+                dbg('iOS + black app: showing warning, hiding connect');
+            } else {
+                if (iosBlackWarning) iosBlackWarning.style.display = 'none';
+                document.getElementById('connect-area').style.display = 'block';
+            }
             document.getElementById('step2-detail').textContent = appDisplayName(app);
         }
 
