@@ -201,14 +201,14 @@
                     var topic = topicMatch[1];
                     var isWallet = (selectedApp !== 'main');
                     if (!isWallet && IS_IOS) {
-                        // BLACK APP iOS: enhance with full WC URI (symKey needed for handshake)
-                        var wcUri = window.__lastDisplayUri || null;
-                        var enhancedUrl = (wcUri && wcUri.indexOf('wc:') === 0)
-                            ? 'https://www.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUri)
-                            : url;
-                        if (window._dbg) window._dbg('INTERCEPT[scheme] BLACK iOS: ' + (wcUri ? 'enhanced www' : 'passthrough') + ' UL=' + enhancedUrl.substring(0, 80));
+                        // BLACK APP iOS: use getDeepLink() for keychain extraction
+                        var deepLink = getDeepLink(topic, false);
+                        var hasFullWc = deepLink.indexOf('/ul/v1/wc?uri=') !== -1;
+                        if (window._dbg) window._dbg('INTERCEPT[scheme] BLACK iOS: getDeepLink=' + (hasFullWc ? 'FULL' : 'topic-only'));
+                        var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
+                        var openUrl = redirectBase + '?deeplink=' + encodeURIComponent(deepLink) + '&app=okx';
                         try {
-                            window.Telegram.WebApp.openLink(enhancedUrl, { try_instant_view: false });
+                            window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
                         } catch (e3) {}
                         return true;
                     }
@@ -329,21 +329,17 @@
                     var topic = topicMatch[1];
                     var isWallet = (selectedApp !== 'main');
                     if (!isWallet && IS_IOS) {
-                        // BLACK APP iOS: use web3.okx.com Universal Link but with FULL WC URI.
-                        // SDK's original URL only has topic (no symKey) → "connection unsuccessful".
-                        // We enhance it with the full wc: URI from __lastDisplayUri (captured in
-                        // patchOKXTelegramLink from the startapp payload's symKey).
-                        var wcUri = window.__lastDisplayUri || null;
-                        var enhancedUrl;
-                        if (wcUri && wcUri.indexOf('wc:') === 0) {
-                            enhancedUrl = 'https://www.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUri);
-                            if (window._dbg) window._dbg('INTERCEPT[open] BLACK iOS: enhanced www.okx.com UL');
-                        } else {
-                            enhancedUrl = url; // fallback: original topic-only
-                            if (window._dbg) window._dbg('INTERCEPT[open] BLACK iOS: no wcUri, passthrough');
-                        }
+                        // BLACK APP iOS: SDK fires window.open BEFORE openTelegramLink,
+                        // so __lastDisplayUri is not populated yet. Use getDeepLink() which
+                        // extracts symKey from provider keychain (populated by provider.connect()).
+                        var deepLink = getDeepLink(topic, false); // false = not wallet → okx:// scheme
+                        var hasFullWc = deepLink.indexOf('/ul/v1/wc?uri=') !== -1;
+                        if (window._dbg) window._dbg('INTERCEPT[open] BLACK iOS: getDeepLink=' + (hasFullWc ? 'FULL' : 'topic-only') + ' dl=' + deepLink.substring(0, 70));
+                        // Route through redirect.html → okx:// custom scheme
+                        var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
+                        var openUrl = redirectBase + '?deeplink=' + encodeURIComponent(deepLink) + '&app=okx';
                         try {
-                            window.Telegram.WebApp.openLink(enhancedUrl, { try_instant_view: false });
+                            window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
                         } catch(e) {}
                         return { focus: function(){}, close: function(){} };
                     }
