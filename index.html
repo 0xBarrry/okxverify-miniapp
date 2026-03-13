@@ -73,6 +73,11 @@
 
                         // Build app-specific deep link URL
                         var isWalletApp = (selectedApp !== 'main');
+                        // Also try display_uri captured from SDK event
+                        if (!wcUri && window.__lastDisplayUri && window.__lastDisplayUri.indexOf('wc:') === 0) {
+                            wcUri = window.__lastDisplayUri;
+                            if (window._dbg) window._dbg('[OKX] using display_uri from SDK event');
+                        }
                         var wcUriForLink = wcUri || (topic.indexOf('wc:') === 0 ? topic : null);
                         var mobileUrl;
 
@@ -129,26 +134,32 @@
             // For OKX Wallet (green): build okxwallet://web3/wallet/connect?topic=X
             // and route through redirect.html (Safari → location.href → custom scheme → green app).
             if (scheme === 'https:' && url.indexOf('web3.okx.com') !== -1) {
-                if (selectedApp !== 'main') {
-                    var topicMatch = url.match(/[?&](topic=[^&]+.*)/);
-                    if (topicMatch) {
-                        var walletDeepLink = 'okxwallet://web3/wallet/connect?' + topicMatch[1];
-                        var redirectUrl = 'https://0xbarrry.github.io/okxverify-miniapp/redirect.html'
-                            + '?deeplink=' + encodeURIComponent(walletDeepLink)
-                            + '&app=wallet';
-                        console.log('[SchemeInterceptor] → redirect.html → okxwallet://', walletDeepLink.substring(0, 80));
-                        if (window._dbg) window._dbg('→ redirect → ' + walletDeepLink.substring(0, 80));
-                        try {
-                            window.Telegram.WebApp.openLink(redirectUrl, { try_instant_view: false });
-                        } catch(e3) {
-                            if (window._dbg) window._dbg('openLink error: ' + e3.message);
-                            return false;
-                        }
-                        return true;
+                var topicMatch = url.match(/[?&]topic=([^&]+)/);
+                if (topicMatch) {
+                    var topic = topicMatch[1];
+                    var isWallet = (selectedApp !== 'main');
+                    var _scheme = isWallet ? 'okxwallet' : 'okx';
+                    var displayUri = window.__lastDisplayUri || null;
+                    var deepLink;
+                    if (displayUri && displayUri.indexOf('wc:') === 0) {
+                        deepLink = _scheme + '://ul/v1/wc?uri=' + encodeURIComponent(displayUri);
+                        if (window._dbg) window._dbg('[scheme] using display_uri');
+                    } else {
+                        deepLink = isWallet
+                            ? _scheme + '://web3/wallet/connect?topic=' + topic
+                            : _scheme + '://ul/connect?topic=' + topic;
+                        if (window._dbg) window._dbg('[scheme] no display_uri, fallback topic-only');
                     }
+                    var appType = isWallet ? 'wallet' : 'okx';
+                    var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
+                    var redirectUrl = redirectBase + '?deeplink=' + encodeURIComponent(deepLink) + '&app=' + appType;
+                    try {
+                        window.Telegram.WebApp.openLink(redirectUrl, { try_instant_view: false });
+                    } catch(e3) { return false; }
+                    return true;
                 }
-                // Main OKX app: Universal Link directly
-                if (window._dbg) window._dbg('→ tg.openLink (main): ' + url.substring(0, 80));
+                // No topic — pass through
+                if (window._dbg) window._dbg('→ tg.openLink (raw web3): ' + url.substring(0, 80));
                 try {
                     window.Telegram.WebApp.openLink(url, { try_instant_view: false });
                 } catch(e3) { return false; }
@@ -256,26 +267,37 @@
             // web3.okx.com Universal Link opens MAIN OKX app (black) — we need OKX Wallet (green).
             // Convert to okxwallet:// custom scheme via redirect.html.
             if (typeof url === 'string' && url.indexOf('web3.okx.com') !== -1) {
-                // OKX SDK proprietary protocol: web3.okx.com/ul/connect?topic=X
-                // For OKX Wallet (green): redirect.html → okxwallet://web3/wallet/connect?topic=X
-                if (selectedApp !== 'main') {
-                    var topicMatch = url.match(/[?&](topic=[^&]+.*)/);
-                    if (topicMatch) {
-                        var walletDeepLink = 'okxwallet://web3/wallet/connect?' + topicMatch[1];
-                        var redirectUrl = 'https://0xbarrry.github.io/okxverify-miniapp/redirect.html'
-                            + '?deeplink=' + encodeURIComponent(walletDeepLink)
-                            + '&app=wallet';
-                        console.log('[window.open] → redirect.html → okxwallet://', walletDeepLink.substring(0, 80));
-                        if (window._dbg) window._dbg('[window.open] → redirect → ' + walletDeepLink.substring(0, 80));
-                        try {
-                            window.Telegram.WebApp.openLink(redirectUrl, { try_instant_view: false });
-                        } catch(e) {
-                            if (window._dbg) window._dbg('openLink error: ' + e.message);
-                        }
-                        return { focus: function(){}, close: function(){} };
+                var topicMatch = url.match(/[?&]topic=([^&]+)/);
+                if (topicMatch) {
+                    var topic = topicMatch[1];
+                    var isWallet = (selectedApp !== 'main');
+                    var scheme = isWallet ? 'okxwallet' : 'okx';
+
+                    // Try display_uri first (full WC URI with symKey — most reliable)
+                    var displayUri = window.__lastDisplayUri || null;
+                    var deepLink;
+                    if (displayUri && displayUri.indexOf('wc:') === 0) {
+                        deepLink = scheme + '://ul/v1/wc?uri=' + encodeURIComponent(displayUri);
+                        if (window._dbg) window._dbg('[window.open] using display_uri → ' + deepLink.substring(0, 80));
+                    } else {
+                        // Fallback: topic-only deep link
+                        deepLink = isWallet
+                            ? scheme + '://web3/wallet/connect?topic=' + topic
+                            : scheme + '://ul/connect?topic=' + topic;
+                        if (window._dbg) window._dbg('[window.open] no display_uri, fallback → ' + deepLink.substring(0, 80));
                     }
+
+                    var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
+                    var appType = isWallet ? 'wallet' : 'okx';
+                    var redirectUrl = redirectBase + '?deeplink=' + encodeURIComponent(deepLink) + '&app=' + appType;
+                    try {
+                        window.Telegram.WebApp.openLink(redirectUrl, { try_instant_view: false });
+                    } catch(e) {
+                        if (window._dbg) window._dbg('openLink error: ' + e.message);
+                    }
+                    return { focus: function(){}, close: function(){} };
                 }
-                // Main OKX app: Universal Link directly
+                // No topic — pass through (main OKX or raw URL)
                 if (window._dbg) window._dbg('[window.open] → main OKX: ' + url.substring(0, 80));
                 try {
                     window.Telegram.WebApp.openLink(url, { try_instant_view: false });
@@ -1151,6 +1173,16 @@
                     dbg('OKXSolanaProvider init failed: ' + e.message);
                 }
             }
+
+            // Capture display_uri — full WC URI with symKey (for interceptors)
+            try {
+                provider.on('display_uri', function(uri) {
+                    if (typeof uri === 'string' && uri.indexOf('wc:') === 0) {
+                        window.__lastDisplayUri = uri;
+                        dbg('display_uri captured: ' + uri.substring(0, 70));
+                    }
+                });
+            } catch (eDisplay) { dbg('display_uri hook failed: ' + eDisplay.message); }
 
             dbg('provider.connected()=' + provider.connected());
 
