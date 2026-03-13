@@ -102,13 +102,11 @@
                             var currentPage = (typeof window !== 'undefined' && window.location) ? window.location.href : '';
                             var redirectBase = currentPage.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
                             mobileUrl = redirectBase + '?app=okx&uri=' + encodeURIComponent(wcUriForLink);
-                        } else if (!isWalletApp && IS_IOS && wcUriForLink) {
-                            // Main OKX app (black) iOS: Universal Link www.okx.com/download/link
-                            // okx:// custom scheme NOT registered on iOS.
-                            // /download/link ensures AASA /download/* pattern match.
-                            // deeplink param (no underscore) matches barry-v2 secondary interceptor.
-                            var okxDL = 'okx://ul/v1/wc?uri=' + encodeURIComponent(wcUriForLink);
-                            mobileUrl = 'https://www.okx.com/download/link?deeplink=' + encodeURIComponent(okxDL);
+                        } else if (!isWalletApp && IS_IOS) {
+                            // Main OKX app (black) iOS: Universal Link via link.okx.com
+                            // SDK natively uses https://link.okx.com/ul/connect?topic=X (NOT www.okx.com!)
+                            // AASA on link.okx.com registers com.okex.OKExAppstoreFull under /ul/*
+                            mobileUrl = 'https://link.okx.com/ul/connect?topic=' + encodeURIComponent(topic);
                         } else {
                             // Fallback: download page
                             var scheme = isWalletApp ? 'okxwallet' : 'okx';
@@ -200,11 +198,10 @@
                     var topic = topicMatch[1];
                     var isWallet = (selectedApp !== 'main');
                     if (!isWallet && IS_IOS) {
-                        // BLACK APP iOS: keychain extraction + Universal Link
-                        var deepLink = getDeepLink(topic, false);
-                        var hasFullWc = deepLink.indexOf('/ul/v1/wc?uri=') !== -1;
-                        if (window._dbg) window._dbg('INTERCEPT[scheme] BLACK iOS: getDeepLink=' + (hasFullWc ? 'FULL' : 'topic-only'));
-                        var openUrl = 'https://www.okx.com/download/link?deeplink=' + encodeURIComponent(deepLink);
+                        // BLACK APP iOS: link.okx.com Universal Link (SDK native format)
+                        // AASA on link.okx.com has com.okex.OKExAppstoreFull under /ul/*
+                        var openUrl = 'https://link.okx.com/ul/connect?topic=' + encodeURIComponent(topic);
+                        if (window._dbg) window._dbg('INTERCEPT[scheme] BLACK iOS: link.okx.com topic=' + topic.substring(0, 16));
                         try {
                             window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
                         } catch (e3) {}
@@ -327,15 +324,12 @@
                     var topic = topicMatch[1];
                     var isWallet = (selectedApp !== 'main');
                     if (!isWallet && IS_IOS) {
-                        // BLACK APP iOS: SDK fires window.open BEFORE openTelegramLink,
-                        // so __lastDisplayUri is not populated yet. Use getDeepLink() which
-                        // extracts symKey from provider keychain (populated by provider.connect()).
-                        // okx:// custom scheme NOT registered on iOS → use Universal Link.
-                        // Path /download/link matches AASA /download/* pattern.
-                        var deepLink = getDeepLink(topic, false); // false = not wallet → okx:// scheme
-                        var hasFullWc = deepLink.indexOf('/ul/v1/wc?uri=') !== -1;
-                        if (window._dbg) window._dbg('INTERCEPT[open] BLACK iOS: getDeepLink=' + (hasFullWc ? 'FULL' : 'topic-only') + ' dl=' + deepLink.substring(0, 70));
-                        var openUrl = 'https://www.okx.com/download/link?deeplink=' + encodeURIComponent(deepLink);
+                        // BLACK APP iOS: link.okx.com Universal Link (SDK native format)
+                        // SDK natively uses https://link.okx.com/ul/connect?topic=X
+                        // AASA on link.okx.com has com.okex.OKExAppstoreFull under /ul/*
+                        // Topic from web3.okx.com URL already includes MD5 suffix from SDK
+                        var openUrl = 'https://link.okx.com/ul/connect?topic=' + encodeURIComponent(topic);
+                        if (window._dbg) window._dbg('INTERCEPT[open] BLACK iOS: link.okx.com topic=' + topic.substring(0, 16));
                         try {
                             window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
                         } catch(e) {}
@@ -775,13 +769,6 @@
                 </div>
             </div>
 
-            <!-- iOS + black OKX App warning -->
-            <div id="ios-black-warning" style="display:none;margin-top:12px;padding:14px 16px;background:rgba(255,180,0,0.12);border:1px solid rgba(255,180,0,0.3);border-radius:12px;text-align:center">
-                <div style="font-size:15px;color:#ffb400;font-weight:600;margin-bottom:6px">⚠️ Not available on iOS</div>
-                <div style="font-size:13px;color:#aab;line-height:1.5">OKX App connection on iPhone is temporarily unavailable.<br>Please use <strong style="color:#7DF000">OKX Wallet</strong> (green icon) instead — it's lightweight and works perfectly.</div>
-                <button onclick="selectApp('wallet')" style="margin-top:12px;padding:10px 28px;background:#7DF000;color:#000;border:none;border-radius:8px;font-size:14px;font-weight:600;cursor:pointer">Switch to OKX Wallet</button>
-            </div>
-
             <!-- Connect area (shown after app is selected) -->
             <div id="connect-area" style="display:none">
                 <button id="btn-connect" onclick="connectWallet()">Connect Wallet</button>
@@ -1005,17 +992,8 @@
             document.getElementById('btn-app-main').classList.toggle('selected', app === 'main');
             document.getElementById('btn-app-wallet').classList.toggle('selected', app === 'wallet');
 
-            // iOS + black OKX App: connection is broken on OKX side (Mar 2026).
-            // Show warning and suggest green OKX Wallet instead.
-            var iosBlackWarning = document.getElementById('ios-black-warning');
-            if (app === 'main' && IS_IOS) {
-                if (iosBlackWarning) iosBlackWarning.style.display = 'block';
-                document.getElementById('connect-area').style.display = 'none';
-                dbg('iOS + black app: showing warning, hiding connect');
-            } else {
-                if (iosBlackWarning) iosBlackWarning.style.display = 'none';
-                document.getElementById('connect-area').style.display = 'block';
-            }
+            // Show connect area (keep app selector visible so user can switch)
+            document.getElementById('connect-area').style.display = 'block';
             document.getElementById('step2-detail').textContent = appDisplayName(app);
         }
 
