@@ -202,10 +202,14 @@
                     var topic = topicMatch[1];
                     var isWallet = (selectedApp !== 'main');
                     if (!isWallet && IS_IOS) {
-                        // BLACK APP iOS: pass through original web3.okx.com URL
-                        if (window._dbg) window._dbg('INTERCEPT[scheme] BLACK iOS: passthrough UL=' + url.substring(0, 80));
+                        // BLACK APP iOS: enhance with full WC URI (symKey needed for handshake)
+                        var wcUri = window.__lastDisplayUri || null;
+                        var enhancedUrl = (wcUri && wcUri.indexOf('wc:') === 0)
+                            ? 'https://web3.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUri)
+                            : url;
+                        if (window._dbg) window._dbg('INTERCEPT[scheme] BLACK iOS: ' + (wcUri ? 'enhanced' : 'passthrough') + ' UL=' + enhancedUrl.substring(0, 80));
                         try {
-                            window.Telegram.WebApp.openLink(url, { try_instant_view: false });
+                            window.Telegram.WebApp.openLink(enhancedUrl, { try_instant_view: false });
                         } catch (e3) {}
                         return true;
                     }
@@ -326,12 +330,21 @@
                     var topic = topicMatch[1];
                     var isWallet = (selectedApp !== 'main');
                     if (!isWallet && IS_IOS) {
-                        // BLACK APP iOS: pass through the ORIGINAL web3.okx.com URL via tg.openLink.
-                        // This is the SDK's native Universal Link — opens black OKX app with WC topic.
-                        // No custom URL building needed — the SDK knows what it's doing.
-                        if (window._dbg) window._dbg('INTERCEPT[open] BLACK iOS: passthrough UL=' + url.substring(0, 80));
+                        // BLACK APP iOS: use web3.okx.com Universal Link but with FULL WC URI.
+                        // SDK's original URL only has topic (no symKey) → "connection unsuccessful".
+                        // We enhance it with the full wc: URI from __lastDisplayUri (captured in
+                        // patchOKXTelegramLink from the startapp payload's symKey).
+                        var wcUri = window.__lastDisplayUri || null;
+                        var enhancedUrl;
+                        if (wcUri && wcUri.indexOf('wc:') === 0) {
+                            enhancedUrl = 'https://web3.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUri);
+                            if (window._dbg) window._dbg('INTERCEPT[open] BLACK iOS: enhanced UL with symKey');
+                        } else {
+                            enhancedUrl = url; // fallback: original topic-only
+                            if (window._dbg) window._dbg('INTERCEPT[open] BLACK iOS: no wcUri, passthrough');
+                        }
                         try {
-                            window.Telegram.WebApp.openLink(url, { try_instant_view: false });
+                            window.Telegram.WebApp.openLink(enhancedUrl, { try_instant_view: false });
                         } catch(e) {}
                         return { focus: function(){}, close: function(){} };
                     }
