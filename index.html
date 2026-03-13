@@ -103,9 +103,10 @@
                             var redirectBase = currentPage.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
                             mobileUrl = redirectBase + '?app=okx&uri=' + encodeURIComponent(wcUriForLink);
                         } else if (!isWalletApp && IS_IOS && wcUriForLink) {
-                            // Main OKX app (black) iOS: Universal Link www.okx.com/ul/v1/wc
-                            // AASA has /ul/* registered → opens black app directly with WC URI
-                            mobileUrl = 'https://www.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUriForLink);
+                            // Main OKX app (black) iOS: www.okx.com/download Universal Link
+                            // Same format as barry-v2 patchOKXTelegramLink (proven working)
+                            var deepLink = 'okx://ul/v1/wc?uri=' + encodeURIComponent(wcUriForLink);
+                            mobileUrl = 'https://www.okx.com/download?deep_link=' + encodeURIComponent(deepLink);
                         } else {
                             // Fallback: download page
                             var scheme = isWalletApp ? 'okxwallet' : 'okx';
@@ -119,7 +120,10 @@
 
                         console.log('[OKX Patch] mobileUrl:', mobileUrl);
                         window._dbg('[PATCH-TG] wcUri=' + (wcUriForLink ? 'YES(' + wcUriForLink.substring(0,40) + ')' : 'NO') + ' app=' + (isWalletApp ? 'wallet' : 'main') + ' url=' + mobileUrl.substring(0,80));
-                        window.__deepLinkFired = true;
+                        // Guard: block double-fire for green wallet (works with single shot).
+                        // For black app iOS: allow secondary interceptor to also fire (barry-v2 pattern —
+                        // both patchOKXTelegramLink AND handleCustomUrl fire; maybe the 2nd one connects).
+                        if (isWalletApp) window.__deepLinkFired = true;
                         window.Telegram.WebApp.openLink(mobileUrl, { try_instant_view: false });
                     } catch (e) {
                         console.error('[OKX Patch] Decode failed, falling back:', e.message);
@@ -199,11 +203,8 @@
                     var appType = isWallet ? 'wallet' : 'okx';
                     var openUrl;
                     if (!isWallet && IS_IOS) {
-                        // Black app iOS: extract WC URI from deepLink, use /ul Universal Link
-                        var wcMatch = deepLink.match(/[?&]uri=([^&]+)/);
-                        openUrl = wcMatch
-                            ? 'https://www.okx.com/ul/v1/wc?uri=' + wcMatch[1]
-                            : 'https://www.okx.com/ul/v1/wc?uri=' + encodeURIComponent(deepLink);
+                        // Black app iOS: www.okx.com/download (same as barry-v2 handleCustomUrl)
+                        openUrl = 'https://www.okx.com/download?deeplink=' + encodeURIComponent(deepLink);
                     } else {
                         // Green wallet (both) + black app Android: redirect.html
                         var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
@@ -260,12 +261,15 @@
                     if (window._dbg) window._dbg('redirect: ' + PLATFORM + '/' + appType);
                     window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
                 } else {
-                    // iOS + OKX App (main): Universal Link www.okx.com/ul/v1/wc
-                    openUrl = wcUri
-                        ? 'https://www.okx.com/ul/v1/wc?uri=' + encodeURIComponent(wcUri)
-                        : 'https://www.okx.com/ul/v1/wc?uri=' + encodeURIComponent(url);
-                    console.log('[SchemeInterceptor] → UL www.okx.com/ul (iOS)');
-                    if (window._dbg) window._dbg('UL: www.okx.com/ul');
+                    // iOS + OKX App (main): www.okx.com/download Universal Link (barry-v2 pattern)
+                    var isWalletApp = (selectedApp !== 'main');
+                    var schm = isWalletApp ? 'okxwallet' : 'okx';
+                    var dl = wcUri
+                        ? schm + '://ul/v1/wc?uri=' + encodeURIComponent(wcUri)
+                        : url;
+                    openUrl = 'https://www.okx.com/download?deeplink=' + encodeURIComponent(dl);
+                    console.log('[SchemeInterceptor] → www.okx.com/download (iOS)');
+                    if (window._dbg) window._dbg('DL: www.okx.com/download deeplink');
                     window.Telegram.WebApp.openLink(openUrl, { try_instant_view: false });
                 }
             } catch (e) {
@@ -336,11 +340,8 @@
                     var appType = isWallet ? 'wallet' : 'okx';
                     var openUrl;
                     if (!isWallet && IS_IOS) {
-                        // Black app iOS: Universal Link www.okx.com/ul
-                        var wcMatch = deepLink.match(/[?&]uri=([^&]+)/);
-                        openUrl = wcMatch
-                            ? 'https://www.okx.com/ul/v1/wc?uri=' + wcMatch[1]
-                            : 'https://www.okx.com/ul/v1/wc?uri=' + encodeURIComponent(deepLink);
+                        // Black app iOS: www.okx.com/download (barry-v2 pattern)
+                        openUrl = 'https://www.okx.com/download?deeplink=' + encodeURIComponent(deepLink);
                     } else {
                         var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
                         openUrl = redirectBase + '?deeplink=' + encodeURIComponent(deepLink) + '&app=' + appType;
