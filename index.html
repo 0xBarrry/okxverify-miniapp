@@ -27,6 +27,11 @@
         }
     } catch(e) {}
 
+    // Guard: once an interceptor opens a deep link, prevent others from double-firing.
+    // In barry-v2 the secondary interceptors are async (delayed), but ours are sync —
+    // without this guard, two tg.openLink() calls fire simultaneously and disrupt WC handshake.
+    window.__deepLinkFired = false;
+
     // PRIMARY handler for TMA mode: OKX SDK calls openTelegramLink → OKX_WALLET_BOT
     // (defunct since Sep 2025). This interceptor converts those calls to proper
     // HTTPS deep links via tg.openLink(). TelegramWebviewProxy is KEPT (not deleted)
@@ -114,6 +119,7 @@
 
                         console.log('[OKX Patch] mobileUrl:', mobileUrl);
                         window._dbg('[PATCH-TG] wcUri=' + (wcUriForLink ? 'YES(' + wcUriForLink.substring(0,40) + ')' : 'NO') + ' app=' + (isWalletApp ? 'wallet' : 'main') + ' url=' + mobileUrl.substring(0,80));
+                        window.__deepLinkFired = true;
                         window.Telegram.WebApp.openLink(mobileUrl, { try_instant_view: false });
                     } catch (e) {
                         console.error('[OKX Patch] Decode failed, falling back:', e.message);
@@ -173,6 +179,11 @@
 
         function handleCustomUrl(url) {
             if (!url || typeof url !== 'string') return false;
+            // Skip if primary interceptor (patchOKXTelegramLink) already handled this connection
+            if (window.__deepLinkFired) {
+                if (window._dbg) window._dbg('handleCustomUrl SKIP: deepLinkFired');
+                return true; // return true to suppress default navigation
+            }
             var scheme;
             try { scheme = new URL(url).protocol; } catch (e) { return false; }
             // OKX SDK uses https://web3.okx.com/ul/connect?topic=X (proprietary protocol).
@@ -310,6 +321,11 @@
             // web3.okx.com Universal Link opens MAIN OKX app (black) — we need OKX Wallet (green).
             // Convert to okxwallet:// custom scheme via redirect.html.
             if (typeof url === 'string' && url.indexOf('web3.okx.com') !== -1) {
+                // Skip if primary interceptor already handled this connection
+                if (window.__deepLinkFired) {
+                    if (window._dbg) window._dbg('[window.open] SKIP web3: deepLinkFired');
+                    return { focus: function(){}, close: function(){} };
+                }
                 var topicMatch = url.match(/[?&]topic=([^&]+)/);
                 if (topicMatch) {
                     var topic = topicMatch[1];
@@ -1286,6 +1302,7 @@
             dbg('connectWallet() called, isConnecting=' + isConnecting + ' net=' + selectedNetwork);
             if (isConnecting) { dbg('BLOCKED: isConnecting=true'); return; }
             isConnecting = true;
+            window.__deepLinkFired = false; // Reset guard for new connection attempt
 
             hideError('err-connect');
             document.getElementById('timeout-connect').style.display = 'none';
