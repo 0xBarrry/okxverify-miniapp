@@ -1150,6 +1150,7 @@
         }
 
         function showStep3(address) {
+            if (connectedAddress) { dbg('showStep3 already called, skipping double-fire'); return; }
             connectedAddress = address;
             isConnecting = false;
             document.getElementById('step2-num').classList.add('done');
