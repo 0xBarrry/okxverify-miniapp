@@ -111,6 +111,15 @@
                             if (window._dbg) window._dbg('[PATCH-TG] BLACK iOS: SKIP, let SDK native flow');
                             _orig(url);
                             return;
+                        } else if (isWalletApp && IS_IOS && !wcUriForLink && topic) {
+                            // OKX Wallet (green) iOS but no WC URI yet (Solana race condition —
+                            // display_uri hasn't fired yet). Use OKX proprietary topic protocol.
+                            // display_uri handler will re-open with full WC URI when it fires.
+                            var currentPage = (typeof window !== 'undefined' && window.location) ? window.location.href : '';
+                            var redirectBase = currentPage.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
+                            var topicLink = 'okxwallet://web3/wallet/connect?topic=' + encodeURIComponent(topic);
+                            mobileUrl = redirectBase + '?deeplink=' + encodeURIComponent(topicLink) + '&app=wallet';
+                            if (window._dbg) window._dbg('[PATCH-TG] GREEN iOS no-URI fallback → topic link');
                         } else {
                             // Fallback: download page
                             var scheme = isWalletApp ? 'okxwallet' : 'okx';
@@ -1224,6 +1233,21 @@
                     if (typeof uri === 'string' && uri.indexOf('wc:') === 0) {
                         window.__lastDisplayUri = uri;
                         dbg('display_uri captured: ' + uri.substring(0, 70));
+                        // iOS correction: if an interceptor already fired without a full WC URI
+                        // (race condition — display_uri arrived after window.open was intercepted),
+                        // re-open OKX with the correct full URI now that we have it.
+                        // This fixes Solana + OKX Wallet (green) + iOS: symKey was missing → "connection unsuccessful"
+                        if (IS_IOS && isConnecting) {
+                            var scheme = (selectedApp !== 'main') ? 'okxwallet' : 'okx';
+                            var redirectBase = window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
+                            var correctedLink = scheme + '://ul/v1/wc?uri=' + encodeURIComponent(uri);
+                            var correctedUrl = redirectBase + '?deeplink=' + encodeURIComponent(correctedLink) + '&app=' + (selectedApp !== 'main' ? 'wallet' : 'okx');
+                            dbg('display_uri iOS correction → ' + correctedLink.substring(0, 70));
+                            window.__deepLinkFired = true;
+                            try { window.Telegram.WebApp.openLink(correctedUrl, { try_instant_view: false }); } catch(e) {
+                                dbg('display_uri correction openLink error: ' + e.message);
+                            }
+                        }
                     }
                 });
             } catch (eDisplay) { dbg('display_uri hook failed: ' + eDisplay.message); }
