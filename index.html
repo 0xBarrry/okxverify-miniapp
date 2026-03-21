@@ -112,14 +112,44 @@
                             _orig(url);
                             return;
                         } else if (isWalletApp && IS_IOS && !wcUriForLink && topic) {
-                            // OKX Wallet (green) iOS but no WC URI yet (Solana race condition —
-                            // display_uri hasn't fired yet). Use OKX proprietary topic protocol.
-                            // display_uri handler will re-open with full WC URI when it fires.
-                            var currentPage = (typeof window !== 'undefined' && window.location) ? window.location.href : '';
-                            var redirectBase = currentPage.replace(/\/[^/]*(\?.*)?$/, '/redirect.html');
-                            var topicLink = 'okxwallet://web3/wallet/connect?topic=' + encodeURIComponent(topic);
-                            mobileUrl = redirectBase + '?deeplink=' + encodeURIComponent(topicLink) + '&app=wallet';
-                            if (window._dbg) window._dbg('[PATCH-TG] GREEN iOS no-URI fallback → topic link');
+                            // OKX Wallet (green) iOS + Solana race condition:
+                            // SDK adds symKey to keychain AFTER calling openTelegramLink (async).
+                            // Poll keychain every 100ms (up to 800ms). If symKey arrives → open
+                            // OKX Wallet with full WC URI. Fallback to topic-only after 8 retries.
+                            var _t = topic;
+                            var _rb2 = (typeof window !== 'undefined' && window.location)
+                                ? window.location.href.replace(/\/[^/]*(\?.*)?$/, '/redirect.html') : '';
+                            window.__deepLinkFired = true; // block other interceptors immediately
+                            var _r = 0;
+                            (function _kPoll() {
+                                _r++;
+                                var _sk = null;
+                                try {
+                                    var _p = window.__okxProvider;
+                                    if (_p && _p.client && _p.client.core && _p.client.core.crypto && _p.client.core.crypto.keychain) {
+                                        var _kc = _p.client.core.crypto.keychain;
+                                        _sk = _kc[_t] || null;
+                                        if (!_sk) { var _ks = Object.keys(_kc); if (_ks.length) _sk = _kc[_ks[_ks.length - 1]]; }
+                                    }
+                                } catch (_e) {}
+                                var _url;
+                                if (_sk) {
+                                    var _wu = 'wc:' + _t + '@2?relay-protocol=irn&symKey=' + _sk;
+                                    var _dl = 'okxwallet://ul/v1/wc?uri=' + encodeURIComponent(_wu);
+                                    _url = _rb2 + '?deeplink=' + encodeURIComponent(_dl) + '&app=wallet';
+                                    if (window._dbg) window._dbg('[PATCH-TG] GREEN iOS kPoll#' + _r + ' symKey! full URI');
+                                } else if (_r < 8) {
+                                    if (window._dbg) window._dbg('[PATCH-TG] GREEN iOS kPoll#' + _r + ' waiting...');
+                                    setTimeout(_kPoll, 100);
+                                    return;
+                                } else {
+                                    var _tl = 'okxwallet://web3/wallet/connect?topic=' + encodeURIComponent(_t);
+                                    _url = _rb2 + '?deeplink=' + encodeURIComponent(_tl) + '&app=wallet';
+                                    if (window._dbg) window._dbg('[PATCH-TG] GREEN iOS kPoll exhausted → topic-only');
+                                }
+                                try { window.Telegram.WebApp.openLink(_url, { try_instant_view: false }); } catch (_e2) {}
+                            })();
+                            return; // skip fall-through to mobileUrl openLink
                         } else {
                             // Fallback: download page
                             var scheme = isWalletApp ? 'okxwallet' : 'okx';
